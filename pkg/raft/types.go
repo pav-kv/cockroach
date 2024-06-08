@@ -122,6 +122,16 @@ func (s logSlice) termAt(index uint64) uint64 {
 	return s.entries[index-s.prev.index-1].Term
 }
 
+// forward returns a logSlice with prev forwarded to the given index.
+// Requires: prev.index <= index <= lastIndex().
+func (s logSlice) forward(index uint64) logSlice {
+	return logSlice{
+		term:    s.term,
+		prev:    entryID{term: s.termAt(index), index: index},
+		entries: s.entries[index-s.prev.index:],
+	}
+}
+
 // valid returns nil iff the logSlice is a well-formed log slice. See logSlice
 // comment for details on what constitutes a valid raft log slice.
 func (s logSlice) valid() error {
@@ -164,15 +174,20 @@ type snapshot struct {
 	snap pb.Snapshot
 }
 
+// lastIndex returns the index of the last entry covered by this snapshot.
+func (s snapshot) lastIndex() uint64 {
+	return s.snap.Metadata.Index
+}
+
 // lastEntryID returns the ID of the last entry covered by this snapshot.
 func (s snapshot) lastEntryID() entryID {
-	return entryID{term: s.snap.Metadata.Term, index: s.snap.Metadata.Index}
+	return entryID{term: s.snap.Metadata.Term, index: s.lastIndex()}
 }
 
 // mark returns committed logMark of this snapshot, in the coordinate system of
 // the leader who observes this committed state.
 func (s snapshot) mark() logMark {
-	return logMark{term: s.term, index: s.snap.Metadata.Index}
+	return logMark{term: s.term, index: s.lastIndex()}
 }
 
 // valid returns nil iff the snapshot is well-formed.

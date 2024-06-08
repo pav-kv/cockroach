@@ -19,60 +19,86 @@ package raft
 
 import pb "github.com/cockroachdb/cockroach/pkg/raft/raftpb"
 
-// unstable contains "unstable" log entries and snapshot state that has
-// not yet been written to Storage. The type serves two roles. First, it
-// holds on to new log entries and an optional snapshot until they are
-// handed to a Ready struct for persistence. Second, it continues to
-// hold on to this state after it has been handed off to provide raftLog
-// with a view of the in-progress log entries and snapshot until their
-// writes have been stabilized and are guaranteed to be reflected in
-// queries of Storage. After this point, the corresponding log entries
-// and/or snapshot can be cleared from unstable.
+// unstable is a suffix of the raft log not yet written to Storage. The "log"
+// state can be represented by a snapshot, and/or a contiguous slice of entries.
 //
-// unstable.entries[i] has raft log position i+unstable.offset.
-// Note that unstable.offset may be less than the highest log
-// position in storage; this means that the next write to storage
-// might need to truncate the log before persisting unstable.entries.
+// The possible states:
+//  1. Both the snapshot and the entries logSlice are empty. This means the log
+//     is fully in stable Storage.
+//  2. The snapshot is empty, and the entries logSlice is non-empty. All entries
+//     up to logSlice.prev are in Storage, and the logSlice is not yet written.
+//  3. The snapshot is non-empty, and the logSlice is empty. The snapshot
+//     represents the (0, lastIndex] log prefix being written.
+//  4. Both the snapshot and logSlice are non-empty. The snapshot immediately
+//     precedes the entries, i.e. the first entry is at snapshot.index + 1. This
+//     state represents the (0, lastIndex] log prefix being written.
+//
+// The type serves two roles. First, it holds on to the latest snapshot / log
+// entries until they are handed to storage for persistence (via Ready API) and
+// subsequently acknowledged. This provides the RawNode with a consistent view
+// on the latest state of the log: it can be constructed by combining the log
+// prefix from Storage, and the suffix from unstable.
+//
+// Second, it supports the asynchronous log writes protocol. The snapshot and
+// the entries are handed to storage in the order that guarantees consistency of
+// the log. The unstable structure expects acknowledgments from the storage to
+// arrive in the same order, and clears the snapshot and the entries from memory
+// when it is safe to do so.
+//
+// TODO(pav-kv): describe the order guarantee and the write protocol when
+// accTerm (logSlice.term) is integrated into the protocol.
+//
+// Note that the in-memory prefix of the log can contain entries at indices less
+// than Storage.LastIndex(). This means that the next write to storage might
+// need to truncate the log before persisting the new suffix. Such a situation
+// happens when there is a leader change, and the new leader overwrites entries
+// that haven't been committed yet.
 type unstable struct {
-	// the incoming unstable snapshot, if any.
+	// snapshot is the incoming unstable snapshot, if any.
 	//
-	// Invariants:
-	//	- snapshot == nil ==> !snapshotInProgress
-	//	- snapshot != nil ==> offset == snapshot.Metadata.Index + 1
+	// Invariant: snapshot == nil ==> !snapInProgress
+	// Invariant: snapshot != nil ==> snapshot.lastEntryID == logSlice.prev
 	//
 	// The last invariant enforces the order of handling a situation when there is
 	// both a snapshot and entries. The snapshot must be acknowledged first,
 	// before entries are acknowledged and offset moves forward.
 	snapshot *pb.Snapshot
-	// all entries that have not yet been written to storage.
-	entries []pb.Entry
-	// entries[i] has raft log position i+offset.
-	offset uint64
 
-	// if true, snapshot is being written to storage.
+	// logSlice is the suffix of the raft log that is not yet written to storage.
+	// If all the entries are stable, or covered by an in-flight snapshot, then
+	// logSlice.entries is empty.
 	//
-	// Invariant: snapshotInProgress ==> snapshot != nil
-	snapshotInProgress bool
-	// entries[:offsetInProgress-offset] are being written to storage.
-	// Like offset, offsetInProgress is exclusive, meaning that it
-	// contains the index following the largest in-progress entry.
+	// Invariant: logSlice.term, a.k.a. the "last accepted term", is the term of
+	// the leader whose append (either entries or snapshot) we accepted last. Our
+	// log is consistent with the leader at this term.
 	//
-	// Invariant: offset <= offsetInProgress
-	// Invariant: offsetInProgress - offset <= len(entries)
-	// Invariant: offsetInProgress > offset ==> snapshot == nil || snapshotInProgress
+	// Invariant: logSlice.prev is the ID of the last persisted entry, or the ID
+	// of the in-flight snapshot if snapshot != nil.
+	logSlice
+
+	// snapInProgress is true if the snapshot is being written to storage.
+	//
+	// Invariant: snapInProgress ==> snapshot != nil
+	snapInProgress bool
+	// inProgress is the index of the last entry in logSlice already being written
+	// to storage.
+	//
+	// Invariant: logSlice.prev.index <= inProgress <= logSlice.lastIndex().
+	// Invariant: inProgress > logSlice.prev.index ==> snapInProgress == true
 	//
 	// The last invariant enforces the order of handling a situation when there is
-	// both a snapshot and entries. The snapshot must be sent to storage first.
-	offsetInProgress uint64
+	// both a snapshot and entries. The snapshot must be sent to storage first, or
+	// together with the entries.
+	inProgress uint64
 
 	logger Logger
 }
 
-func newUnstable(offset uint64, logger Logger) unstable {
+func newUnstable(last entryID, logger Logger) unstable {
 	return unstable{
-		offset:           offset,
-		offsetInProgress: offset,
-		logger:           logger,
+		logSlice:   logSlice{term: last.term, prev: last},
+		inProgress: last.index,
+		logger:     logger,
 	}
 }
 
@@ -85,53 +111,27 @@ func (u *unstable) maybeFirstIndex() (uint64, bool) {
 	return 0, false
 }
 
-// maybeLastIndex returns the last index if it has at least one
-// unstable entry or snapshot.
-func (u *unstable) maybeLastIndex() (uint64, bool) {
-	if l := len(u.entries); l != 0 {
-		return u.offset + uint64(l) - 1, true
-	}
-	if u.snapshot != nil {
-		return u.snapshot.Metadata.Index, true
-	}
-	return 0, false
-}
-
-// maybeTerm returns the term of the entry at index i, if there
-// is any.
+// maybeTerm returns the term of the entry at index i, if there is any.
 func (u *unstable) maybeTerm(i uint64) (uint64, bool) {
-	if i < u.offset {
-		if u.snapshot != nil && u.snapshot.Metadata.Index == i {
-			return u.snapshot.Metadata.Term, true
-		}
+	if i < u.prev.index || i > u.lastIndex() {
 		return 0, false
 	}
-
-	last, ok := u.maybeLastIndex()
-	if !ok {
-		return 0, false
-	}
-	if i > last {
-		return 0, false
-	}
-
-	return u.entries[i-u.offset].Term, true
+	return u.termAt(i), true
 }
 
 // nextEntries returns the unstable entries that are not already in the process
 // of being written to storage.
 func (u *unstable) nextEntries() []pb.Entry {
-	inProgress := int(u.offsetInProgress - u.offset)
-	if len(u.entries) == inProgress {
+	if u.inProgress == u.lastIndex() {
 		return nil
 	}
-	return u.entries[inProgress:]
+	return u.entries[u.inProgress-u.prev.index:]
 }
 
 // nextSnapshot returns the unstable snapshot, if one exists that is not already
 // in the process of being written to storage.
 func (u *unstable) nextSnapshot() *pb.Snapshot {
-	if u.snapshot == nil || u.snapshotInProgress {
+	if u.snapshot == nil || u.snapInProgress {
 		return nil
 	}
 	return u.snapshot
@@ -144,12 +144,9 @@ func (u *unstable) nextSnapshot() *pb.Snapshot {
 // from those methods, until the next call to acceptInProgress.
 func (u *unstable) acceptInProgress() {
 	if u.snapshot != nil {
-		u.snapshotInProgress = true
+		u.snapInProgress = true
 	}
-	if len(u.entries) > 0 {
-		// NOTE: +1 because offsetInProgress is exclusive, like offset.
-		u.offsetInProgress = u.entries[len(u.entries)-1].Index + 1
-	}
+	u.inProgress = u.lastIndex()
 }
 
 // stableTo marks entries up to the entry with the specified (index, term) as
@@ -165,9 +162,11 @@ func (u *unstable) stableTo(id entryID) {
 		u.logger.Infof("entry at index %d missing from unstable log; ignoring", id.index)
 		return
 	}
-	if id.index < u.offset {
-		// Index matched unstable snapshot, not unstable entry. Ignore.
-		u.logger.Infof("entry at index %d matched unstable snapshot; ignoring", id.index)
+	if id.index <= u.prev.index {
+		// Index is already persisted, or is covered by the snapshot. Ignore.
+		if u.snapshot != nil {
+			u.logger.Infof("entry at index %d matched unstable snapshot; ignoring", id.index)
+		}
 		return
 	}
 	if gt != id.term {
@@ -181,12 +180,10 @@ func (u *unstable) stableTo(id entryID) {
 	}
 	if u.snapshot != nil {
 		u.logger.Panicf("entry %+v acked earlier than the snapshot(in-progress=%t): %s",
-			id, u.snapshotInProgress, DescribeSnapshot(*u.snapshot))
+			id, u.snapInProgress, DescribeSnapshot(*u.snapshot))
 	}
-	num := int(id.index + 1 - u.offset)
-	u.entries = u.entries[num:]
-	u.offset = id.index + 1
-	u.offsetInProgress = max(u.offsetInProgress, u.offset)
+	u.logSlice = u.forward(id.index)
+	u.inProgress = max(u.inProgress, id.index)
 	u.shrinkEntriesArray()
 }
 
@@ -211,53 +208,92 @@ func (u *unstable) shrinkEntriesArray() {
 
 func (u *unstable) stableSnapTo(i uint64) {
 	if u.snapshot != nil && u.snapshot.Metadata.Index == i {
+		u.snapInProgress = false
 		u.snapshot = nil
-		u.snapshotInProgress = false
 	}
 }
 
-func (u *unstable) restore(s snapshot) {
-	u.offset = s.lastEntryID().index + 1
-	u.offsetInProgress = u.offset
-	u.entries = nil
+func (u *unstable) restore(s snapshot) bool {
+	// Do not allow regressing the state.
+	if s.term <= u.term && s.lastIndex() < u.lastIndex() {
+		// NB: today, this can't happen because the caller ensures s.term >= u.term,
+		// and resorts to bumping commit index instead of applying the snapshot if
+		// it matches the log (which will always happen when s.term == u.term).
+		//
+		// We err on the side of maintaining the append-only behaviour/invariant in
+		// unstable structure, in case the caller behaviour changes. Not doing so
+		// carries a risk of regressing the durable state and breaking raft.
+		return false
+	}
+	// All logs at terms >= s.term are consistent with this snapshot. So if our
+	// accepted term is > s.term, it is safe to retain it. This maintains the
+	// invariant that accepted term never regresses.
+	//
+	// Today, the caller is conservative, and s.term >= u.term.
+	accTerm := max(u.term, s.term)
+
 	u.snapshot = &s.snap
-	u.snapshotInProgress = false
+	u.logSlice = logSlice{term: accTerm, prev: s.lastEntryID()}
+	u.snapInProgress = false
+	u.inProgress = u.prev.index
+	return true
 }
 
 func (u *unstable) truncateAndAppend(a logSlice) bool {
-	fromIndex := a.entries[0].Index
-
-	// We do not expect appends at or before the snapshot index.
+	if a.term < u.term {
+		return false // append from an outdated log
+	}
+	// Fast path for appends at the end of the log.
+	last := u.lastEntryID()
+	if a.prev == last {
+		u.term = a.term // update the last accepted term
+		u.entries = append(u.entries, a.entries...)
+		return true
+	}
+	// If a.prev.index > last.index, we can not accept this write because it will
+	// introduce a gap in the log.
 	//
-	// The caller does stronger checks preventing appends at <= commit index, so
-	// the check here is redundant. But it's a defense-in-depth guarding the
-	// unstable struct invariant: entries begin at snapshot index + 1. The code
-	// below does not regress offset beyond the snapshot.
-	if u.snapshot != nil && fromIndex <= u.snapshot.Metadata.Index {
+	// If a.prev.index == last.index, then the last entry term did not match in
+	// the check above, so we must reject this case too.
+	if a.prev.index >= last.index {
+		return false
+	}
+	// Below, we handle the index regression case, a.prev.index < last.index.
+
+	// The caller checks that a.prev.index >= commit, i.e. we are not truncating
+	// committed entries. By extension, a.prev.index >= commit >= snapshot.index.
+	// So we do not expect the following check to fail.
+	//
+	// It is a defense-in-depth guarding the invariant: if snapshot != nil then
+	// prev == snapshot.{term,index}. The code below can regress prev, so we don't
+	// want the snapshot ID to get out of sync with it.
+	if u.snapshot != nil && a.prev.index < u.snapshot.Metadata.Index {
 		u.logger.Panicf("appending entry %+v before snapshot %s",
-			pbEntryID(&a.entries[0]), DescribeSnapshot(*u.snapshot))
+			a.prev, DescribeSnapshot(*u.snapshot))
+		return false
+	}
+	// Within the same leader term, we enforce the log to be append-only, and only
+	// allow index regressions (which cause log truncations) when a.term > u.term.
+	if a.term == u.term {
 		return false
 	}
 
-	switch {
-	case fromIndex == u.offset+uint64(len(u.entries)):
-		// fromIndex is the next index in the u.entries, so append directly.
-		u.entries = append(u.entries, a.entries...)
-	case fromIndex <= u.offset:
-		u.logger.Infof("replace the unstable entries from index %d", fromIndex)
-		// The log is being truncated to before our current offset
-		// portion, so set the offset and replace the entries.
-		u.entries = a.entries
-		u.offset = fromIndex
-		u.offsetInProgress = u.offset
-	default:
-		// Truncate to fromIndex (exclusive), and append the new entries.
-		u.logger.Infof("truncate the unstable entries before index %d", fromIndex)
-		keep := u.slice(u.offset, fromIndex)   // NB: appending to this slice is safe,
-		u.entries = append(keep, a.entries...) // and will reallocate/copy it
-		// Only in-progress entries before fromIndex are still considered to be
-		// in-progress.
-		u.offsetInProgress = min(u.offsetInProgress, fromIndex)
+	// Truncate the logSlice and append new entries. Regress the inProgress marker
+	// to reflect that the truncated entries are no longer considered in progress.
+	u.inProgress = min(u.inProgress, a.prev.index)
+	if a.prev.index <= u.prev.index {
+		u.logSlice = a // replace the entire logSlice with the latest append
+		// TODO(pav-kv): clean up the logging message. It will change all datadriven
+		// test outputs, so do it in a contained PR.
+		u.logger.Infof("replace the unstable entries from index %d", a.prev.index+1)
+	} else {
+		u.term = a.term // update the last accepted term
+		// Use the full slice expression to cause copy-on-write on this or a
+		// subsequent (if a.entries is empty) append to u.entries. The truncated
+		// part of the old slice can still be referenced elsewhere.
+		keep := u.entries[:a.prev.index-u.prev.index]
+		u.entries = append(keep[:len(keep):len(keep)], a.entries...)
+		u.logger.Infof("truncate the unstable entries before index %d", a.prev.index+1)
 	}
 	return true
 }
@@ -275,7 +311,8 @@ func (u *unstable) slice(lo uint64, hi uint64) []pb.Entry {
 	// NB: use the full slice expression to limit what the caller can do with the
 	// returned slice. For example, an append will reallocate and copy this slice
 	// instead of corrupting the neighbouring u.entries.
-	return u.entries[lo-u.offset : hi-u.offset : hi-u.offset]
+	offset := u.prev.index + 1
+	return u.entries[lo-offset : hi-offset : hi-offset]
 }
 
 // u.offset <= lo <= hi <= u.offset+len(u.entries)
@@ -283,8 +320,7 @@ func (u *unstable) mustCheckOutOfBounds(lo, hi uint64) {
 	if lo > hi {
 		u.logger.Panicf("invalid unstable.slice %d > %d", lo, hi)
 	}
-	upper := u.offset + uint64(len(u.entries))
-	if lo < u.offset || hi > upper {
-		u.logger.Panicf("unstable.slice[%d,%d) out of bound [%d,%d]", lo, hi, u.offset, upper)
+	if last := u.lastIndex(); lo <= u.prev.index || hi > last+1 {
+		u.logger.Panicf("unstable.slice[%d,%d) out of bound (%d,%d]", lo, hi, u.prev.index, last)
 	}
 }
