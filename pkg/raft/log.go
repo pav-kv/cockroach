@@ -419,7 +419,7 @@ func (l *raftLog) acceptApplying(i uint64, size entryEncodingSize, allowUnstable
 		i < l.maxAppliableIndex(allowUnstable)
 }
 
-func (l *raftLog) stableTo(id entryID) { l.unstable.stableTo(id) }
+func (l *raftLog) stableTo(mark logMark) { l.unstable.stableTo(mark) }
 
 func (l *raftLog) stableSnapTo(i uint64) { l.unstable.stableSnapTo(i) }
 

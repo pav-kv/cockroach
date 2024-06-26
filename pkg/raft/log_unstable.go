@@ -170,35 +170,28 @@ func (u *unstable) acceptInProgress() {
 // The method should only be called when the caller can attest that the entries
 // can not be overwritten by an in-progress log append. See the related comment
 // in newStorageAppendRespMsg.
-func (u *unstable) stableTo(id entryID) {
-	gt, ok := u.maybeTerm(id.index)
-	if !ok {
-		// Unstable entry missing. Ignore.
-		u.logger.Infof("entry at index %d missing from unstable log; ignoring", id.index)
+func (u *unstable) stableTo(mark logMark) {
+	if mark.term < u.term {
+		// Don't consider the appended log entries to be stable because they may
+		// have been overwritten in the unstable log during a later term.
+		u.logger.Infof("term changed from %d to %d; ignoring ack at index %d",
+			mark.term, u.term, mark.index)
 		return
-	}
-	if id.index <= u.prev.index {
-		// Index is already persisted, or is covered by the snapshot. Ignore.
+	} else if mark.index < u.prev.index || mark.index > u.lastIndex() {
+		u.logger.Infof("entry at index %d missing from unstable log; ignoring", mark.index)
+		return
+	} else if mark.index == u.prev.index {
 		if u.snapshot != nil {
-			u.logger.Infof("entry at index %d matched unstable snapshot; ignoring", id.index)
+			u.logger.Infof("entry at index %d matched unstable snapshot; ignoring", mark.index)
 		}
 		return
-	}
-	if gt != id.term {
-		// Term mismatch between unstable entry and specified entry. Ignore.
-		// This is possible if part or all of the unstable log was replaced
-		// between that time that a set of entries started to be written to
-		// stable storage and when they finished.
-		u.logger.Infof("entry at (index,term)=(%d,%d) mismatched with "+
-			"entry at (%d,%d) in unstable log; ignoring", id.index, id.term, id.index, gt)
+	} else if u.snapshot != nil {
+		u.logger.Panicf("entry %d acked earlier than the snapshot(in-progress=%t): %s",
+			mark.index, u.snapInProgress, DescribeSnapshot(*u.snapshot))
 		return
 	}
-	if u.snapshot != nil {
-		u.logger.Panicf("entry %+v acked earlier than the snapshot(in-progress=%t): %s",
-			id, u.snapInProgress, DescribeSnapshot(*u.snapshot))
-	}
-	u.logSlice = u.forward(id.index)
-	u.inProgress = max(u.inProgress, id.index)
+	u.logSlice = u.forward(mark.index)
+	u.inProgress = max(u.inProgress, mark.index)
 	u.shrinkEntriesArray()
 }
 

@@ -197,10 +197,10 @@ func needStorageAppendMsg(r *raft, rd Ready) bool {
 
 func needStorageAppendRespMsg(r *raft, rd Ready) bool {
 	// Return true if raft needs to hear about stabilized entries or an applied
-	// snapshot. See the comment in newStorageAppendRespMsg, which explains why
-	// we check hasNextOrInProgressUnstableEnts instead of len(rd.Entries) > 0.
-	return r.raftLog.hasNextOrInProgressUnstableEnts() ||
-		!IsEmptySnap(rd.Snapshot)
+	// snapshot.
+	return len(rd.Entries) > 0 ||
+		!IsEmptySnap(rd.Snapshot) ||
+		len(r.msgsAfterAppend) != 0
 }
 
 // newStorageAppendMsg creates the message that should be sent to the local
@@ -253,96 +253,11 @@ func newStorageAppendMsg(r *raft, rd Ready) pb.Message {
 // storage.
 func newStorageAppendRespMsg(r *raft, rd Ready) pb.Message {
 	m := pb.Message{
-		Type: pb.MsgStorageAppendResp,
-		To:   r.id,
-		From: LocalAppendThread,
-		// Dropped after term change, see below.
-		Term: r.Term,
-	}
-	if r.raftLog.hasNextOrInProgressUnstableEnts() {
-		// If the raft log has unstable entries, attach the last index and term of the
-		// append to the response message. This (index, term) tuple will be handed back
-		// and consulted when the stability of those log entries is signaled to the
-		// unstable. If the (index, term) match the unstable log by the time the
-		// response is received (unstable.stableTo), the unstable log can be truncated.
-		//
-		// However, with just this logic, there would be an ABA problem[^1] that could
-		// lead to the unstable log and the stable log getting out of sync temporarily
-		// and leading to an inconsistent view. Consider the following example with 5
-		// nodes, A B C D E:
-		//
-		//  1. A is the leader.
-		//  2. A proposes some log entries but only B receives these entries.
-		//  3. B gets the Ready and the entries are appended asynchronously.
-		//  4. A crashes and C becomes leader after getting a vote from D and E.
-		//  5. C proposes some log entries and B receives these entries, overwriting the
-		//     previous unstable log entries that are in the process of being appended.
-		//     The entries have a larger term than the previous entries but the same
-		//     indexes. It begins appending these new entries asynchronously.
-		//  6. C crashes and A restarts and becomes leader again after getting the vote
-		//     from D and E.
-		//  7. B receives the entries from A which are the same as the ones from step 2,
-		//     overwriting the previous unstable log entries that are in the process of
-		//     being appended from step 5. The entries have the original terms and
-		//     indexes from step 2. Recall that log entries retain their original term
-		//     numbers when a leader replicates entries from previous terms. It begins
-		//     appending these new entries asynchronously.
-		//  8. The asynchronous log appends from the first Ready complete and stableTo
-		//     is called.
-		//  9. However, the log entries from the second Ready are still in the
-		//     asynchronous append pipeline and will overwrite (in stable storage) the
-		//     entries from the first Ready at some future point. We can't truncate the
-		//     unstable log yet or a future read from Storage might see the entries from
-		//     step 5 before they have been replaced by the entries from step 7.
-		//     Instead, we must wait until we are sure that the entries are stable and
-		//     that no in-progress appends might overwrite them before removing entries
-		//     from the unstable log.
-		//
-		// To prevent these kinds of problems, we also attach the current term to the
-		// MsgStorageAppendResp (above). If the term has changed by the time the
-		// MsgStorageAppendResp if returned, the response is ignored and the unstable
-		// log is not truncated. The unstable log is only truncated when the term has
-		// remained unchanged from the time that the MsgStorageAppend was sent to the
-		// time that the MsgStorageAppendResp is received, indicating that no-one else
-		// is in the process of truncating the stable log.
-		//
-		// However, this replaces a correctness problem with a liveness problem. If we
-		// only attempted to truncate the unstable log when appending new entries but
-		// also occasionally dropped these responses, then quiescence of new log entries
-		// could lead to the unstable log never being truncated.
-		//
-		// To combat this, we attempt to truncate the log on all MsgStorageAppendResp
-		// messages where the unstable log is not empty, not just those associated with
-		// entry appends. This includes MsgStorageAppendResp messages associated with an
-		// updated HardState, which occur after a term change.
-		//
-		// In other words, we set Index and LogTerm in a block that looks like:
-		//
-		//  if r.raftLog.hasNextOrInProgressUnstableEnts() { ... }
-		//
-		// not like:
-		//
-		//  if len(rd.Entries) > 0 { ... }
-		//
-		// To do so, we attach r.raftLog.lastIndex() and r.raftLog.lastTerm(), not the
-		// (index, term) of the last entry in rd.Entries. If rd.Entries is not empty,
-		// these will be the same. However, if rd.Entries is empty, we still want to
-		// attest that this (index, term) is correct at the current term, in case the
-		// MsgStorageAppend that contained the last entry in the unstable slice carried
-		// an earlier term and was dropped.
-		//
-		// A MsgStorageAppend with a new term is emitted on each term change. This is
-		// the same condition that causes MsgStorageAppendResp messages with earlier
-		// terms to be ignored. As a result, we are guaranteed that, assuming a bounded
-		// number of term changes, there will eventually be a MsgStorageAppendResp
-		// message that is not ignored. This means that entries in the unstable log
-		// which have been appended to stable storage will eventually be truncated and
-		// dropped from memory.
-		//
-		// [^1]: https://en.wikipedia.org/wiki/ABA_problem
-		last := r.raftLog.lastEntryID()
-		m.Index = last.index
-		m.LogTerm = last.term
+		Type:    pb.MsgStorageAppendResp,
+		To:      r.id,
+		From:    LocalAppendThread,
+		LogTerm: r.raftLog.accTerm(),
+		Index:   r.raftLog.lastIndex(),
 	}
 	if !IsEmptySnap(rd.Snapshot) {
 		snap := rd.Snapshot
