@@ -697,8 +697,7 @@ func (r *raft) appliedTo(index uint64, size entryEncodingSize) {
 	}
 }
 
-func (r *raft) appliedSnap(snap *pb.Snapshot) {
-	index := snap.Metadata.Index
+func (r *raft) appliedSnap(index uint64) {
 	r.raftLog.stableSnapTo(index)
 	r.appliedTo(index, 0 /* size */)
 }
@@ -1101,7 +1100,7 @@ func (r *raft) Step(m pb.Message) error {
 		if m.Snapshot != nil {
 			// Even if the snapshot applied under a different term, its application
 			// is still valid. Snapshots carry committed (term-independent) state.
-			r.appliedSnap(m.Snapshot)
+			r.appliedSnap(m.Snapshot.Metadata.Index)
 		}
 		if m.Index != 0 {
 			r.raftLog.stableTo(logMark{term: m.LogTerm, index: m.Index})

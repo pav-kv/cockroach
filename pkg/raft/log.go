@@ -421,7 +421,7 @@ func (l *raftLog) acceptApplying(i uint64, size entryEncodingSize, allowUnstable
 
 func (l *raftLog) stableTo(mark logMark) { l.unstable.stableTo(mark) }
 
-func (l *raftLog) stableSnapTo(i uint64) { l.unstable.stableSnapTo(i) }
+func (l *raftLog) stableSnapTo(index uint64) { l.unstable.stableSnapTo(index) }
 
 // acceptUnstable indicates that the application has started persisting the
 // unstable entries in storage, and that the current unstable entries are thus
