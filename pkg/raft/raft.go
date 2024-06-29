@@ -1660,12 +1660,9 @@ func (r *raft) handleAppendEntries(m pb.Message) {
 	}
 	if r.raftLog.maybeAppend(a) {
 		// TODO(pav-kv): make it possible to commit even if the append did not
-		// succeed or is stale. If cTerm >= m.Term, then our log contains all
-		// committed entries at m.Term (by raft invariants), so it is safe to bump
-		// the commit index even if the MsgApp is stale.
-		lastIndex := a.lastIndex()
-		r.raftLog.commitTo(logMark{term: m.Term, index: min(m.Commit, lastIndex)})
-		r.send(pb.Message{To: m.From, Type: pb.MsgAppResp, Index: lastIndex})
+		// succeed or is stale. The commitTo call can succeed in more cases.
+		r.raftLog.commitTo(logMark{term: m.Term, index: m.Commit})
+		r.send(pb.Message{To: m.From, Type: pb.MsgAppResp, Index: a.lastIndex()})
 		return
 	}
 	r.logger.Debugf("%x [logterm: %d, index: %d] rejected MsgApp [logterm: %d, index: %d] from %x",
@@ -1715,33 +1712,7 @@ func (r *raft) checkMatch(match uint64) {
 
 func (r *raft) handleHeartbeat(m pb.Message) {
 	r.checkMatch(m.Match)
-
-	// The m.Term leader is indicating to us through this heartbeat message
-	// that indices <= m.Commit in its log are committed. If our log matches
-	// the leader's up to index M, then we can update our commit index to
-	// min(m.Commit, M).
-	//
-	// If accTerm == m.Term, i.e. the last accepted log append came from this
-	// leader, then we know that our log is a prefix of the leader's log. We can
-	// thus put M = r.raftLog.lastIndex() in the formula above.
-	//
-	// Otherwise (accTerm != m.Term), we haven't accepted a single log append from
-	// the m.Term leader, so we don't know M, and it is unsafe to update the
-	// commit index.
-	//
-	// NB: in the latter case, our log is lagging the leader's. If the leader is
-	// stable, we will eventually accept a MsgApp which sets accTerm == m.Term and
-	// enables advancing the commit index. By this, we have the guarantee that our
-	// commit index converges to the leader's.
-	//
-	// TODO(pav-kv): the condition can be relaxed, it is actually safe to bump the
-	// commit index if accTerm >= m.Term.
-	// TODO(pav-kv): move this logic to raftLog.commitTo, once the accTerm has
-	// migrated to raftLog/unstable.
-	mark := logMark{term: m.Term, index: min(m.Commit, r.raftLog.lastIndex())}
-	if mark.term == r.raftLog.accTerm() {
-		r.raftLog.commitTo(mark)
-	}
+	r.raftLog.commitTo(logMark{term: m.Term, index: m.Commit})
 	r.send(pb.Message{To: m.From, Type: pb.MsgHeartbeatResp})
 }
 

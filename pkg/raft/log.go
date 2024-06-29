@@ -356,21 +356,31 @@ func (l *raftLog) lastIndex() uint64 {
 	return l.unstable.lastIndex()
 }
 
-// commitTo bumps the commit index to the given value if it is higher than the
-// current commit index.
+// commitTo bumps the commit index to the given index if it is higher than the
+// current commit index. Only commits from terms <= accTerm are effective.
+//
+// The term leader is indicating to us through a heartbeat message that indices
+// <= commit in its log are committed. If our log matches the leader's up to
+// index M, then we can update our commit index to min(commit, M).
+//
+// If term <= accTerm, i.e. the last accepted log append came from this leader,
+// or a leader who contains all committed entries by that term, then we know
+// that our at <= commit index matches the leader's at the given term. We can
+// thus put M = min(commit, lastIndex) in the formula above.
+//
+// Otherwise (accTerm < term), we haven't accepted a single log append from the
+// term leader, so we don't know M, and it is unsafe to update the commit index.
+//
+// NB: in the latter case, our log is lagging the leader's. If the leader is
+// stable, we will eventually receive a MsgApp which sets accTerm == term and
+// enables advancing the commit index. By this, we have the guarantee that our
+// commit index converges to the leader's.
 func (l *raftLog) commitTo(mark logMark) {
-	// TODO(pav-kv): it is only safe to update the commit index if our log is
-	// consistent with the mark.term leader. If the mark.term leader sees the
-	// mark.index entry as committed, all future leaders have it in the log. It is
-	// thus safe to bump the commit index to min(mark.index, lastIndex) if our
-	// accTerm >= mark.term. Do this once raftLog/unstable tracks the accTerm.
-
-	// never decrease commit
-	if l.committed < mark.index {
-		if l.lastIndex() < mark.index {
-			l.logger.Panicf("tocommit(%d) is out of range [lastIndex(%d)]. Was the raft log corrupted, truncated, or lost?", mark.index, l.lastIndex())
-		}
-		l.committed = mark.index
+	if mark.term > l.accTerm() {
+		return
+	}
+	if index := min(mark.index, l.lastIndex()); index > l.committed {
+		l.committed = index
 	}
 }
 
