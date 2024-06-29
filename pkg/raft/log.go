@@ -522,7 +522,7 @@ func (l *raftLog) restore(s snapshot) bool {
 	last := s.lastEntryID()
 	l.logger.Infof("log [%s] starts to restore snapshot [index: %d, term: %d]", l, last.index, last.term)
 	if l.unstable.restore(s) {
-		l.committed = last.index
+		l.commitTo(s.mark())
 		return true
 	}
 	return false

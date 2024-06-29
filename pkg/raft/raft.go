@@ -1661,6 +1661,7 @@ func (r *raft) handleAppendEntries(m pb.Message) {
 	if r.raftLog.maybeAppend(a) {
 		// TODO(pav-kv): make it possible to commit even if the append did not
 		// succeed or is stale. The commitTo call can succeed in more cases.
+		// TODO(pav-kv): validate the logMark.
 		r.raftLog.commitTo(logMark{term: m.Term, index: m.Commit})
 		r.send(pb.Message{To: m.From, Type: pb.MsgAppResp, Index: a.lastIndex()})
 		return
@@ -1712,6 +1713,7 @@ func (r *raft) checkMatch(match uint64) {
 
 func (r *raft) handleHeartbeat(m pb.Message) {
 	r.checkMatch(m.Match)
+	// TODO(pav-kv): validate the logMark.
 	r.raftLog.commitTo(logMark{term: m.Term, index: m.Commit})
 	r.send(pb.Message{To: m.From, Type: pb.MsgHeartbeatResp})
 }
@@ -1799,6 +1801,8 @@ func (r *raft) restore(s snapshot) bool {
 		last := r.raftLog.lastEntryID()
 		r.logger.Infof("%x [commit: %d, lastindex: %d, lastterm: %d] fast-forwarded commit to snapshot [index: %d, term: %d]",
 			r.id, r.raftLog.committed, last.index, last.term, id.index, id.term)
+		// TODO(pav-kv): the commit index advancement may not happen here. Make the
+		// logging above conditional.
 		r.raftLog.commitTo(s.mark())
 		return false
 	}
