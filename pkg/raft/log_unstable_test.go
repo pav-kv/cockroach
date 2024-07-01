@@ -510,7 +510,7 @@ func TestUnstableTruncateAndAppend(t *testing.T) {
 		ls               logSlice
 		offsetInProgress uint64
 		snap             *pb.Snapshot
-		toappend         []pb.Entry
+		app              logSlice
 
 		woffset           uint64
 		woffsetInProgress uint64
@@ -519,49 +519,49 @@ func TestUnstableTruncateAndAppend(t *testing.T) {
 		// append to the end
 		{
 			prev4.append(1), 5, nil,
-			index(6).terms(1, 1),
+			entryID{term: 1, index: 5}.append(1, 1),
 			5, 5, index(5).terms(1, 1, 1),
 		},
 		{
 			prev4.append(1), 6, nil,
-			index(6).terms(1, 1),
+			entryID{term: 1, index: 5}.append(1, 1),
 			5, 6, index(5).terms(1, 1, 1),
 		},
 		// replace the unstable entries
 		{
 			prev4.append(1), 5, nil,
-			index(5).terms(2, 2),
+			entryID{term: 1, index: 4}.append(2, 2),
 			5, 5, index(5).terms(2, 2),
 		},
 		{
 			prev4.append(1), 5, nil,
-			index(4).terms(2, 2, 2),
+			entryID{term: 1, index: 3}.append(2, 2, 2),
 			4, 4, index(4).terms(2, 2, 2),
 		},
 		{
 			prev4.append(1), 6, nil,
-			index(5).terms(2, 2),
+			entryID{term: 1, index: 4}.append(2, 2),
 			5, 5, index(5).terms(2, 2),
 		},
 		// truncate the existing entries and append
 		{
 			prev4.append(1, 1, 1), 5, nil,
-			index(6).terms(2),
+			entryID{term: 1, index: 5}.append(2),
 			5, 5, index(5).terms(1, 2),
 		},
 		{
 			prev4.append(1, 1, 1), 5, nil,
-			index(7).terms(2, 2),
+			entryID{term: 1, index: 6}.append(2, 2),
 			5, 5, index(5).terms(1, 1, 2, 2),
 		},
 		{
 			prev4.append(1, 1, 1), 6, nil,
-			index(6).terms(2),
+			entryID{term: 1, index: 5}.append(2),
 			5, 6, index(5).terms(1, 2),
 		},
 		{
 			prev4.append(1, 1, 1), 7, nil,
-			index(6).terms(2),
+			entryID{term: 1, index: 5}.append(2),
 			5, 6, index(5).terms(1, 2),
 		},
 	} {
@@ -571,7 +571,7 @@ func TestUnstableTruncateAndAppend(t *testing.T) {
 			u.snapshotInProgress = u.snapshot != nil && u.offsetInProgress > u.offset
 			u.checkInvariants(t)
 
-			u.truncateAndAppend(tt.toappend)
+			require.True(t, u.truncateAndAppend(tt.app))
 			u.checkInvariants(t)
 			require.Equal(t, tt.woffset, u.offset)
 			require.Equal(t, tt.woffsetInProgress, u.offsetInProgress)

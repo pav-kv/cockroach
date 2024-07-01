@@ -136,10 +136,7 @@ func (l *raftLog) append(a logSlice) bool {
 	if first := a.entries[0].Index; first <= l.committed {
 		l.logger.Panicf("entry %d is already committed [committed(%d)]", first, l.committed)
 	}
-	// TODO(pav-kv): pass the logSlice down the stack, for safety checks and
-	// bookkeeping in the unstable structure.
-	l.unstable.truncateAndAppend(a.entries)
-	return true
+	return l.unstable.truncateAndAppend(a)
 }
 
 // findConflict finds the last entry in the given log slice that matches the
