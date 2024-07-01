@@ -2360,7 +2360,7 @@ func TestProvideSnap(t *testing.T) {
 	}
 	storage := newTestMemoryStorage(withPeers(1))
 	sm := newTestRaft(1, 10, 1, storage)
-	sm.becomeFollower(s.Metadata.Term, None)
+	sm.becomeFollower(s.snap.Metadata.Term, None)
 	sm.restore(s)
 
 	sm.becomeCandidate()
@@ -2388,7 +2388,7 @@ func TestIgnoreProvidingSnap(t *testing.T) {
 	}
 	storage := newTestMemoryStorage(withPeers(1))
 	sm := newTestRaft(1, 10, 1, storage)
-	sm.becomeFollower(s.Metadata.Term, None)
+	sm.becomeFollower(s.snap.Metadata.Term, None)
 	sm.restore(s)
 
 	sm.becomeCandidate()
