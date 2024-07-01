@@ -73,7 +73,7 @@ func TestUnstableMaybeFirstIndex(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			u := newUnstable(tt.offset, raftLogger)
+			u := newUnstable(tt.offset, discardLogger)
 			u.snapshot = tt.snap
 			u.entries = tt.entries
 			u.checkInvariants(t)
@@ -117,7 +117,7 @@ func TestMaybeLastIndex(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			u := newUnstable(tt.offset, raftLogger)
+			u := newUnstable(tt.offset, discardLogger)
 			u.snapshot = tt.snap
 			u.entries = tt.entries
 			u.checkInvariants(t)
@@ -195,7 +195,7 @@ func TestUnstableMaybeTerm(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			u := newUnstable(tt.offset, raftLogger)
+			u := newUnstable(tt.offset, discardLogger)
 			u.snapshot = tt.snap
 			u.entries = tt.entries
 			u.checkInvariants(t)
@@ -214,7 +214,7 @@ func TestUnstableRestore(t *testing.T) {
 		offsetInProgress:   6,
 		snapshot:           &pb.Snapshot{Metadata: pb.SnapshotMetadata{Index: 4, Term: 1}},
 		snapshotInProgress: true,
-		logger:             raftLogger,
+		logger:             discardLogger,
 	}
 	u.checkInvariants(t)
 
@@ -259,7 +259,7 @@ func TestUnstableNextEntries(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			u := newUnstable(tt.offset, raftLogger)
+			u := newUnstable(tt.offset, discardLogger)
 			u.entries = tt.entries
 			u.offsetInProgress = tt.offsetInProgress
 			u.checkInvariants(t)
@@ -296,7 +296,7 @@ func TestUnstableNextSnapshot(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			u := newUnstable(tt.offset, raftLogger)
+			u := newUnstable(tt.offset, discardLogger)
 			u.snapshot = tt.snapshot
 			u.snapshotInProgress = tt.snapshotInProgress
 			u.checkInvariants(t)
@@ -399,7 +399,7 @@ func TestUnstableAcceptInProgress(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			u := newUnstable(tt.offset, raftLogger)
+			u := newUnstable(tt.offset, discardLogger)
 			u.snapshot = tt.snapshot
 			u.entries = tt.entries
 			u.snapshotInProgress = tt.snapshotInProgress
@@ -496,7 +496,7 @@ func TestUnstableStableTo(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			u := newUnstable(tt.offset, raftLogger)
+			u := newUnstable(tt.offset, discardLogger)
 			u.snapshot = tt.snap
 			u.entries = tt.entries
 			u.offsetInProgress = tt.offsetInProgress
@@ -580,7 +580,7 @@ func TestUnstableTruncateAndAppend(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			u := newUnstable(tt.offset, raftLogger)
+			u := newUnstable(tt.offset, discardLogger)
 			u.snapshot = tt.snap
 			u.entries = tt.entries
 			u.offsetInProgress = tt.offsetInProgress
