@@ -152,6 +152,12 @@ func (r *replicaTruncatorTest) getStateLoader() stateloader.StateLoader {
 	return r.stateLoader
 }
 
+func (r *replicaTruncatorTest) truncateRaftMuLocked(
+	_ context.Context, newState *kvserverpb.RaftTruncatedState, _ storage.ReadWriter,
+) (bool, error) {
+	return newState.Index > r.truncState.Index, nil
+}
+
 func (r *replicaTruncatorTest) handleTruncationResult(_ context.Context, pt pendingTruncation) {
 	expectedFirstIndexWasAccurate := r.truncState.Index+1 == pt.expectedFirstIndex
 	r.truncState = pt.RaftTruncatedState

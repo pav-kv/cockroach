@@ -12,6 +12,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/stateloader"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
+	"github.com/cockroachdb/cockroach/pkg/storage"
 )
 
 // Implementation of the replicaForTruncator interface.
@@ -50,4 +51,10 @@ func (r *raftTruncatorReplica) getStateLoader() stateloader.StateLoader {
 	// the duration of the existence of replicaForTruncator, so we return the
 	// r.raftMu.stateloader (and not r.mu.stateLoader).
 	return r.raftMu.stateLoader
+}
+
+func (r *raftTruncatorReplica) truncateRaftMuLocked(
+	ctx context.Context, newTruncState *kvserverpb.RaftTruncatedState, readWriter storage.ReadWriter,
+) (_apply bool, _ error) {
+	return (*Replica)(r).asLogStorage().truncateRaftMuLocked(ctx, newTruncState, readWriter)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
+	"github.com/cockroachdb/cockroach/pkg/storage"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
 )
 
@@ -97,6 +98,50 @@ func (r *replicaLogStorage) updateLogSize(ctx context.Context) (int64, error) {
 	r.shMu.raftLogLastCheckSize = size
 	r.shMu.raftLogSizeTrusted = true
 	return size, nil
+}
+
+// --- Truncation ---
+
+// The truncated state of a replica determines where its Raft log starts (by
+// giving the last index that was already deleted). It's unreplicated -- it can
+// differ between replicas at the same applied index. This divergence primarily
+// occurs through snapshots that contain no log entries; the truncated index in
+// the snapshot is set to equal the applied index it was generated from. The
+// truncation itself then is a purely replicated side effect.
+//
+// Updates to the HardState are sent out by a leaseholder truncating the log
+// based on its local knowledge. For example, the leader might have a log
+// 10..100 and truncates to 50, and will send out a TruncatedState with Index 50
+// to that effect. However, some replicas may not even have log entries that
+// old and must make sure to ignore this update to the truncated state, as it
+// would otherwise clobber their "newer" truncated state. The truncated state
+// provided by the leader then is merely a suggested one -- we could ignore it
+// and still be correct.
+//
+// We also rely on log truncations happening in the apply loop -- this makes
+// sure that a truncation does not remove entries to be applied that we haven't
+// yet. Since a truncation only ever removes committed log indexes, and after
+// choosing the index gets proposed, the truncation command itself will be
+// assigned an index higher than the one it could possibly remove. By the time
+// the truncation itself is handled, the state machine will have applied all
+// entries the truncation could possibly affect.
+//
+// The returned boolean tells the caller whether to apply the truncated state's
+// side effects, which means replacing the in-memory TruncatedState and applying
+// the associated RaftLogDelta. It is usually expected to be true, but may not
+// be for the first truncation after on a replica that recently received a
+// snapshot.
+
+// truncateRaftMuLocked adds a raft log truncation to the given batch. Returns
+// true if the batch has been updated, and the truncation can be applied.
+//
+// When the batch is written, the truncation should be finalized by calling
+// updateTruncStateRaftMuLocked.
+func (r *replicaLogStorage) truncateRaftMuLocked(
+	ctx context.Context, newTruncState *kvserverpb.RaftTruncatedState, readWriter storage.ReadWriter,
+) (_apply bool, _ error) {
+	return logstore.Compact(ctx, r.shMu.raftTruncState, newTruncState,
+		r.raftMu.stateLoader.StateLoader, readWriter)
 }
 
 // updateTruncStateRaftMuLocked finalizes the raft log truncation, after the

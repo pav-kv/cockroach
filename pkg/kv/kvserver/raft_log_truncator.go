@@ -258,6 +258,12 @@ type replicaForTruncator interface {
 	getStateLoader() stateloader.StateLoader
 	// NB: Setting the persistent raft state is via the Engine exposed by
 	// storeForTruncator.
+
+	// truncateRaftMuLocked adds a raft log truncation to the given batch. Returns
+	// true if the batch has been updated, and the truncation can be applied.
+	truncateRaftMuLocked(
+		context.Context, *kvserverpb.RaftTruncatedState, storage.ReadWriter,
+	) (bool, error)
 }
 
 // raftExpectedFirstIndex and raftLogDelta have the same meaning as in
@@ -547,9 +553,8 @@ func (t *raftLogTruncator) tryEnactTruncations(
 	// (this subsumes all the preceding queued truncations).
 	batch := t.store.getEngine().NewUnindexedBatch()
 	defer batch.Close()
-	apply, err := handleTruncatedStateBelowRaftPreApply(ctx, truncState,
-		&pendingTruncs.mu.truncs[enactIndex].RaftTruncatedState,
-		stateLoader.StateLoader, batch)
+	apply, err := r.truncateRaftMuLocked(ctx,
+		&pendingTruncs.mu.truncs[enactIndex].RaftTruncatedState, batch)
 	if err != nil || !apply {
 		if err != nil {
 			log.Errorf(ctx, "while attempting to truncate raft log: %+v", err)
