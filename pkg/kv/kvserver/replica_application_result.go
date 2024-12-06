@@ -506,7 +506,7 @@ func (r *Replica) handleLeaseResult(
 // TODO(pav-kv): this can be simplified further.
 func (r *Replica) handleTruncatedStateResult(
 	ctx context.Context,
-	t *kvserverpb.RaftTruncatedState,
+	t kvserverpb.RaftTruncatedState,
 	expectedFirstIndexPreTruncation kvpb.RaftIndex,
 	raftLogDelta int64,
 	sideloadIncluded bool,
@@ -530,7 +530,7 @@ func (r *Replica) handleTruncatedStateResult(
 	// the truncated state is updated first. The semantics would be that the log
 	// is truncated "logically" first, and then physically under raftMu.
 	r.mu.Lock()
-	r.shMu.raftTruncState = *t
+	r.shMu.raftTruncState = t
 	r.mu.Unlock()
 
 	// Clear any entries in the Raft log entry cache for this range up
