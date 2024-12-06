@@ -99,10 +99,10 @@ func (r *replicaLogStorage) updateLogSize(ctx context.Context) (int64, error) {
 	return size, nil
 }
 
-// handleTruncatedStateResult is a post-apply handler for the raft log
-// truncation command. It updates the in-memory state of the Replica with the
-// new RaftTruncatedState and log size delta, and removes obsolete entries from
-// the raft log cache and sideloaded storage.
+// updateTruncStateRaftMuLocked finalizes the raft log truncation, after the
+// corresponding write batch has been written to storage. It updates the
+// in-memory state with the new RaftTruncatedState and log size delta, and
+// removes obsolete entries from the raft log cache and sideloaded storage.
 //
 // The sideloadIncluded flag specifies whether the raftLogDelta already includes
 // the total size of the sideloaded entries. It is true in loosely coupled
@@ -115,7 +115,7 @@ func (r *replicaLogStorage) updateLogSize(ctx context.Context) (int64, error) {
 // truncations have correct stats (but excluding the sideloaded entries).
 //
 // TODO(pav-kv): this can be simplified further.
-func (r *Replica) handleTruncatedStateResult(
+func (r *replicaLogStorage) updateTruncStateRaftMuLocked(
 	ctx context.Context,
 	t kvserverpb.RaftTruncatedState,
 	expectedFirstIndexPreTruncation kvpb.RaftIndex,
@@ -169,11 +169,11 @@ func (r *Replica) handleTruncatedStateResult(
 	if !sideloadIncluded {
 		raftLogDelta -= size
 	}
-	r.handleRaftLogDeltaResult(raftLogDelta, isRaftLogTruncationDeltaTrusted)
+	r.updateLogSizeWithDelta(raftLogDelta, isRaftLogTruncationDeltaTrusted)
 }
 
 // TODO(pav-kv): consolidate with other truncated state updates.
-func (r *Replica) handleRaftLogDeltaResult(delta int64, isDeltaTrusted bool) {
+func (r *replicaLogStorage) updateLogSizeWithDelta(delta int64, isDeltaTrusted bool) {
 	r.raftMu.AssertHeld()
 	r.mu.Lock()
 	defer r.mu.Unlock()

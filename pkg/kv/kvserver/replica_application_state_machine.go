@@ -320,8 +320,9 @@ func (sm *replicaStateMachine) handleNonTrivialReplicatedEvalResult(
 	// TODO(#93248): the strongly coupled truncation code will be removed once the
 	// loosely coupled truncations are the default.
 	if truncState != nil {
-		sm.r.handleTruncatedStateResult(ctx, *truncState, rResult.RaftExpectedFirstIndex,
-			rResult.RaftLogDelta, true /* isDeltaTrusted */, false /* sideloadIncluded */)
+		sm.r.asLogStorage().updateTruncStateRaftMuLocked(ctx, *truncState,
+			rResult.RaftExpectedFirstIndex, rResult.RaftLogDelta,
+			true /* isDeltaTrusted */, false /* sideloadIncluded */)
 		rResult.RaftLogDelta = 0
 		rResult.RaftExpectedFirstIndex = 0
 	}
