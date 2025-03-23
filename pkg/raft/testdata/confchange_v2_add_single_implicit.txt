@@ -169,10 +169,12 @@ stabilize
   HardState Term:1 Commit:5 Lead:1 LeadEpoch:1
   Entries:
   1/5 EntryConfChangeV2
-  CommittedEntries:
-  1/5 EntryConfChangeV2
   Messages:
   3->1 MsgAppResp Term:1 Log:0/5 Commit:5
-  INFO 3 switched to configuration voters=(1 2 3)
 > 1 receiving messages
   3->1 MsgAppResp Term:1 Log:0/5 Commit:5
+> 3 handling Ready
+  Ready MustSync=false:
+  CommittedEntries:
+  1/5 EntryConfChangeV2
+  INFO 3 switched to configuration voters=(1 2 3)

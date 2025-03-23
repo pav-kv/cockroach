@@ -372,14 +372,16 @@ stabilize
   Entries:
   1/11 EntryNormal ""
   4/12 EntryNormal ""
-  CommittedEntries:
-  1/11 EntryNormal ""
-  4/12 EntryNormal ""
   Messages:
   3->1 MsgAppResp Term:4 Log:0/12 Commit:12
 > 1 receiving messages
   2->1 MsgAppResp Term:4 Log:0/12 Commit:12
   3->1 MsgAppResp Term:4 Log:0/12 Commit:12
+> 3 handling Ready
+  Ready MustSync=false:
+  CommittedEntries:
+  1/11 EntryNormal ""
+  4/12 EntryNormal ""
 
 raft-state
 ----

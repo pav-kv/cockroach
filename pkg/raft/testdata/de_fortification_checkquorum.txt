@@ -436,8 +436,6 @@ stabilize
   HardState Term:3 Commit:13 Lead:3 LeadEpoch:1
   Entries:
   3/13 EntryNormal ""
-  CommittedEntries:
-  3/13 EntryNormal ""
   Messages:
   2->1 MsgDeFortifyLeader Term:2 Log:0/0
   2->3 MsgDeFortifyLeader Term:2 Log:0/0
@@ -451,6 +449,10 @@ stabilize
   INFO 3 [term: 3] ignored a MsgDeFortifyLeader message with lower term from 2 [term: 2]
   2->3 MsgFortifyLeaderResp Term:3 Log:0/0 LeadEpoch:1
   2->3 MsgAppResp Term:3 Log:0/13 Commit:13
+> 2 handling Ready
+  Ready MustSync=false:
+  CommittedEntries:
+  3/13 EntryNormal ""
 
 raft-state
 ----

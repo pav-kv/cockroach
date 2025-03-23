@@ -184,14 +184,16 @@ stabilize 1 4
   1/3 EntryNormal ""
   1/4 EntryConfChangeV2 v4
   1/5 EntryNormal ""
+  Messages:
+  4->1 MsgAppResp Term:1 Log:0/5 Commit:4
+> 1 receiving messages
+  4->1 MsgAppResp Term:1 Log:0/5 Commit:4
+> 4 handling Ready
+  Ready MustSync=false:
   CommittedEntries:
   1/3 EntryNormal ""
   1/4 EntryConfChangeV2 v4
-  Messages:
-  4->1 MsgAppResp Term:1 Log:0/5 Commit:4
   INFO 4 switched to configuration voters=(1 2 3 4)
-> 1 receiving messages
-  4->1 MsgAppResp Term:1 Log:0/5 Commit:4
 
 store-liveness
 ----

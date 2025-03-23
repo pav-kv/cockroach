@@ -110,9 +110,6 @@ func raftConfigStub() raft.Config {
 		HeartbeatTick:      1,
 		MaxSizePerMsg:      math.MaxUint64,
 		MaxInflightMsgs:    math.MaxInt32,
-		TestingKnobs: &raft.TestingKnobs{
-			EnableApplyUnstableEntries: true,
-		},
 	}
 }
 
