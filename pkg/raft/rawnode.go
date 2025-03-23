@@ -35,6 +35,12 @@ var ErrStepPeerNotFound = errors.New("raft: cannot step as peer not found")
 // more fully there.
 type RawNode struct {
 	raft *raft
+
+	// applyUnstableEntries configures whether entries are allowed to be applied
+	// once they are known to be committed but before they have been written
+	// locally to stable storage.
+	applyUnstableEntries bool
+
 	// Mutable fields.
 	prevSoftSt *SoftState
 	prevHardSt pb.HardState
@@ -52,6 +58,7 @@ func NewRawNode(config *Config) (*RawNode, error) {
 	rn := &RawNode{
 		raft: r,
 	}
+	rn.applyUnstableEntries = false
 	ss := r.softState()
 	rn.prevSoftSt = &ss
 	rn.prevHardSt = r.hardState()
@@ -467,13 +474,6 @@ func newStorageApplyRespMsg(r *raft, ents []pb.Entry) pb.Message {
 	}
 }
 
-// applyUnstableEntries returns whether entries are allowed to be applied once
-// they are known to be committed but before they have been written locally to
-// stable storage.
-func (rn *RawNode) applyUnstableEntries() bool {
-	return false
-}
-
 // HasReady called when RawNode user need to check if any Ready pending.
 func (rn *RawNode) HasReady() bool {
 	// TODO(nvanbenschoten): order these cases in terms of cost and frequency.
@@ -490,7 +490,7 @@ func (rn *RawNode) HasReady() bool {
 	if len(r.msgs) > 0 || len(r.msgsAfterAppend) > 0 {
 		return true
 	}
-	if r.raftLog.hasNextUnstableEnts() || r.raftLog.hasNextCommittedEnts(rn.applyUnstableEntries()) {
+	if r.raftLog.hasNextUnstableEnts() || r.raftLog.hasNextCommittedEnts(rn.applyUnstableEntries) {
 		return true
 	}
 	return false
