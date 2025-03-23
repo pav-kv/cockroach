@@ -550,7 +550,6 @@ func (rn *RawNode) Advance(_ Ready) {
 //
 // Only for testing. Will be replaced with a more explicit API.
 func SplitMessages(self pb.PeerID, msgs []pb.Message) (send, advance []pb.Message) {
-	send = make([]pb.Message, 0, len(msgs))
 	for _, msg := range msgs {
 		if !IsLocalMsgTarget(msg.To) {
 			send = append(send, msg)
@@ -576,11 +575,15 @@ func SplitMessages(self pb.PeerID, msgs []pb.Message) (send, advance []pb.Messag
 //
 // Only for testing. Will be replaced with a more explicit API.
 func (rn *RawNode) AdvanceHack(rd Ready) {
+	_, advance := SplitMessages(rn.raft.id, rd.Messages)
+	rn.advance(advance)
+}
+
+func (rn *RawNode) advance(msgs []pb.Message) {
 	if !rn.asyncStorageWrites {
 		rn.raft.logger.Panicf("AdvanceHack must be called when using AsyncStorageWrites")
 	}
-	_, advance := SplitMessages(rn.raft.id, rd.Messages)
-	for _, msg := range advance {
+	for _, msg := range msgs {
 		_ = rn.Step(msg)
 	}
 }
