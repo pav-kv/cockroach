@@ -219,7 +219,8 @@ func testRawNodeProposeAndConfChange(t *testing.T, storeLivenessEnabled bool) {
 			for cs == nil {
 				rd := rawNode.Ready()
 				s.Append(rd.Entries)
-				for _, ent := range rd.CommittedEntries {
+				apply := rawNode.MsgStorageApply()
+				for _, ent := range apply.Entries {
 					var cc pb.ConfChangeI
 					if ent.Type == pb.EntryConfChange {
 						var ccc pb.ConfChange
@@ -234,7 +235,7 @@ func testRawNodeProposeAndConfChange(t *testing.T, storeLivenessEnabled bool) {
 						cs = rawNode.ApplyConfChange(cc)
 					}
 				}
-				rawNode.AdvanceHack(rd)
+				rawNode.Advance(apply)
 				if storeLivenessEnabled {
 					// Revert the support state to how it was so that the test can run
 					// without having peer 1 not supported.
@@ -492,14 +493,15 @@ func TestRawNodeProposeAddDuplicateNode(t *testing.T) {
 		rawNode.ProposeConfChange(cc)
 		rd = rawNode.Ready()
 		s.Append(rd.Entries)
-		for _, entry := range rd.CommittedEntries {
+		apply := rawNode.MsgStorageApply()
+		for _, entry := range apply.Entries {
 			if entry.Type == pb.EntryConfChange {
 				var cc pb.ConfChange
 				cc.Unmarshal(entry.Data)
 				rawNode.ApplyConfChange(cc)
 			}
 		}
-		rawNode.AdvanceHack(rd)
+		rawNode.Advance(apply)
 	}
 
 	cc1 := pb.ConfChange{Type: pb.ConfChangeAddNode, NodeID: 1}

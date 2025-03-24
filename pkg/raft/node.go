@@ -95,6 +95,9 @@ type Ready struct {
 	// when the snapshot has been received or has failed by calling ReportSnapshot.
 	Messages []pb.Message
 
+	HasAppend bool
+	HasApply  bool
+
 	// MustSync indicates whether the HardState and Entries must be durably
 	// written to disk or if a non-durable write is permissible.
 	//

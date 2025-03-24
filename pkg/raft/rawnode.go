@@ -242,24 +242,36 @@ func (rn *RawNode) Ready() Ready {
 	r.raftLog.acceptUnstable()
 	rd.MustSync = MustSync(hardSt, prevHardSt, len(rd.Entries))
 
-	allowUnstable := rn.applyUnstableEntries()
-	if r.raftLog.hasNextCommittedEnts(allowUnstable) {
-		entries := r.raftLog.nextCommittedEnts(allowUnstable)
-		index := entries[len(entries)-1].Index
-		r.raftLog.acceptApplying(index, entsSize(entries), allowUnstable)
-		rd.CommittedEntries = entries
-	}
-
-	// For async storage writes, enqueue messages to local storage threads.
-	if needStorageAppendMsg(r, rd) {
-		rd.Messages = append(rd.Messages, newStorageAppendMsg(r, rd))
-	}
-	if needStorageApplyMsg(rd) {
-		rd.Messages = append(rd.Messages, newStorageApplyMsg(r, rd))
-	}
-	r.msgsAfterAppend = nil
+	rd.HasAppend = needStorageAppendMsg(r, rd)
+	rd.HasApply = needStorageApplyMsg(rd)
 
 	return rd
+}
+
+func (rn *RawNode) ReadySteady() Ready {
+	rd := rn.Ready()
+	if rd.HasAppend {
+		rd.Messages = append(rd.Messages, rn.MsgStorageAppend(rd))
+	}
+	if rd.HasApply {
+		rd.Messages = append(rd.Messages, rn.MsgStorageApply())
+	}
+}
+
+func (rn *RawNode) MsgStorageAppend(rd Ready) pb.Message {
+	return newStorageAppendMsg(rn.raft, rd)
+}
+
+func (rn *RawNode) MsgStorageApply() pb.Message {
+	r := rn.raft
+	allowUnstable := rn.applyUnstableEntries()
+	if !r.raftLog.hasNextCommittedEnts(allowUnstable) {
+		return pb.Message{}
+	}
+	entries := r.raftLog.nextCommittedEnts(allowUnstable)
+	index := entries[len(entries)-1].Index
+	r.raftLog.acceptApplying(index, entsSize(entries), allowUnstable)
+	return newStorageApplyMsg(r, entries)
 }
 
 // MustSync returns true if the hard state and count of Raft entries indicate
@@ -429,8 +441,7 @@ func needStorageApplyRespMsg(rd Ready) bool { return needStorageApplyMsg(rd) }
 // apply thread to instruct it to apply committed log entries. The message
 // also carries a response that should be delivered after the rest of the
 // message is processed.
-func newStorageApplyMsg(r *raft, rd Ready) pb.Message {
-	ents := rd.CommittedEntries
+func newStorageApplyMsg(r *raft, ents []pb.Entry) pb.Message {
 	return pb.Message{
 		Type:    pb.MsgStorageApply,
 		To:      LocalApplyThread,
@@ -533,6 +544,10 @@ func (rn *RawNode) advance(msgs []pb.Message) {
 	for _, msg := range msgs {
 		_ = rn.Step(msg)
 	}
+}
+
+func (rn *RawNode) Advance(m pb.Message) {
+	rn.AdvanceMessages(m)
 }
 
 // Term returns the current in-memory term of this RawNode. This term may not
