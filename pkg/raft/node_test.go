@@ -268,7 +268,9 @@ func TestNodeStart(t *testing.T) {
 	require.NoError(t, err)
 	wants := []Ready{
 		{
-			HardState: raftpb.HardState{Term: 1, Commit: 1, Vote: 0, Lead: 0},
+			HardState:        raftpb.HardState{Term: 1, Commit: 1, Vote: 0, Lead: 0},
+			HasStorageAppend: true,
+			HasStorageApply:  true,
 			Entries: []raftpb.Entry{
 				{Type: raftpb.EntryConfChange, Term: 1, Index: 1, Data: ccdata},
 			},
@@ -278,11 +280,15 @@ func TestNodeStart(t *testing.T) {
 		},
 		{
 			HardState:        raftpb.HardState{Term: 2, Commit: 2, Vote: 1, Lead: 1, LeadEpoch: 1},
+			HasStorageAppend: true,
+			HasStorageApply:  true,
 			Entries:          []raftpb.Entry{{Term: 2, Index: 3, Data: []byte("foo")}},
 			CommittedEntries: []raftpb.Entry{{Term: 2, Index: 2, Data: nil}},
 		},
 		{
 			HardState:        raftpb.HardState{Term: 2, Commit: 3, Vote: 1, Lead: 1, LeadEpoch: 1},
+			HasStorageAppend: true,
+			HasStorageApply:  true,
 			Entries:          nil,
 			CommittedEntries: []raftpb.Entry{{Term: 2, Index: 3, Data: []byte("foo")}},
 		},
@@ -349,7 +355,8 @@ func TestNodeRestart(t *testing.T) {
 
 	want := Ready{
 		// No HardState is emitted because there was no change.
-		HardState: raftpb.HardState{},
+		HardState:       raftpb.HardState{},
+		HasStorageApply: true,
 		// commit up to index commit index in st
 		CommittedEntries: entries[:st.Commit],
 	}
@@ -397,7 +404,8 @@ func TestNodeRestartFromSnapshot(t *testing.T) {
 	want := Ready{
 		// No HardState is emitted because nothing changed relative to what is
 		// already persisted.
-		HardState: raftpb.HardState{},
+		HardState:       raftpb.HardState{},
+		HasStorageApply: true,
 		// commit up to index commit index in st
 		CommittedEntries: entries,
 	}

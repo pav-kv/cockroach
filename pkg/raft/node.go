@@ -47,6 +47,9 @@ type Ready struct {
 	// It is not required to consume or store SoftState.
 	*SoftState
 
+	HasStorageAppend bool
+	HasStorageApply  bool
+
 	// The current state of a Node to be saved to stable storage BEFORE
 	// Messages are sent.
 	//

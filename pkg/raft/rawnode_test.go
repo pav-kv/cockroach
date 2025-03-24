@@ -545,6 +545,8 @@ func TestRawNodeStart(t *testing.T) {
 	want := Ready{
 		SoftState:        &SoftState{RaftState: pb.StateLeader},
 		HardState:        pb.HardState{Term: 1, Commit: 3, Vote: 1, Lead: 1, LeadEpoch: 1},
+		HasStorageAppend: true,
+		HasStorageApply:  true,
 		Entries:          nil, // emitted & checked in intermediate Ready cycle
 		CommittedEntries: entries,
 	}
@@ -629,7 +631,8 @@ func TestRawNodeRestart(t *testing.T) {
 	st := pb.HardState{Term: 1, Commit: 1, Lead: 1, LeadEpoch: 1}
 
 	want := Ready{
-		HardState: emptyState, // no HardState is emitted because there was no change
+		HardState:       emptyState, // no HardState is emitted because there was no change
+		HasStorageApply: true,
 		// commit up to commit index in st
 		CommittedEntries: entries[:st.Commit],
 	}
@@ -691,7 +694,8 @@ func TestRawNodeRestartFromSnapshot(t *testing.T) {
 	st := pb.HardState{Term: 1, Commit: 3}
 
 	want := Ready{
-		HardState: emptyState,
+		HardState:       emptyState,
+		HasStorageApply: true,
 		// commit up to commit index in st
 		CommittedEntries: entries,
 	}
