@@ -466,15 +466,16 @@ func TestNodeAdvance(t *testing.T) {
 }
 
 func TestSoftStateEqual(t *testing.T) {
-	tests := []struct {
-		st *SoftState
+	for _, tt := range []struct {
+		st SoftState
 		we bool
 	}{
-		{&SoftState{}, true},
-		{&SoftState{RaftState: raftpb.StateLeader}, false},
-	}
-	for i, tt := range tests {
-		assert.Equal(t, tt.we, tt.st.equal(&SoftState{}), "#%d", i)
+		{SoftState{}, true},
+		{SoftState{RaftState: raftpb.StateLeader}, false},
+	} {
+		t.Run("", func(t *testing.T) {
+			require.Equal(t, tt.we, tt.st.equal(SoftState{}))
+		})
 	}
 }
 

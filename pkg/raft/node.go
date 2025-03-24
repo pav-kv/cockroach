@@ -34,7 +34,7 @@ type SoftState struct {
 	RaftState pb.StateType
 }
 
-func (a *SoftState) equal(b *SoftState) bool {
+func (a SoftState) equal(b SoftState) bool {
 	return a.RaftState == b.RaftState
 }
 

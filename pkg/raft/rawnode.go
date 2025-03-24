@@ -36,7 +36,7 @@ var ErrStepPeerNotFound = errors.New("raft: cannot step as peer not found")
 type RawNode struct {
 	raft *raft
 	// Mutable fields.
-	prevSoftSt *SoftState
+	prevSoftSt SoftState
 	prevHardSt pb.HardState
 }
 
@@ -49,13 +49,11 @@ type RawNode struct {
 // stores the desired ConfState as its InitialState.
 func NewRawNode(config *Config) (*RawNode, error) {
 	r := newRaft(config)
-	rn := &RawNode{
-		raft: r,
-	}
-	ss := r.softState()
-	rn.prevSoftSt = &ss
-	rn.prevHardSt = r.hardState()
-	return rn, nil
+	return &RawNode{
+		raft:       r,
+		prevSoftSt: r.softState(),
+		prevHardSt: r.hardState(),
+	}, nil
 }
 
 // Tick advances the internal logical clock by a single tick. Election timeouts
@@ -220,10 +218,10 @@ func (rn *RawNode) Ready() Ready {
 	rd.Messages, r.msgs = r.msgs, nil
 
 	if softSt := r.softState(); !softSt.equal(rn.prevSoftSt) {
+		rn.prevSoftSt = softSt
 		// Allocate only when SoftState changes.
 		escapingSoftSt := softSt
 		rd.SoftState = &escapingSoftSt
-		rn.prevSoftSt = &escapingSoftSt
 	}
 	hardSt, prevHardSt := r.hardState(), rn.prevHardSt
 	if !isHardStateEqual(hardSt, prevHardSt) {
@@ -446,7 +444,7 @@ func (rn *RawNode) applyUnstableEntries() bool {
 func (rn *RawNode) HasReady() bool {
 	// TODO(nvanbenschoten): order these cases in terms of cost and frequency.
 	r := rn.raft
-	if softSt := r.softState(); !softSt.equal(rn.prevSoftSt) {
+	if !r.softState().equal(rn.prevSoftSt) {
 		return true
 	}
 	if hardSt := r.hardState(); !IsEmptyHardState(hardSt) && !isHardStateEqual(hardSt, rn.prevHardSt) {
