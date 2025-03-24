@@ -447,7 +447,7 @@ func (rn *RawNode) HasReady() bool {
 	if !r.softState().equal(rn.prevSoftSt) {
 		return true
 	}
-	if hardSt := r.hardState(); !IsEmptyHardState(hardSt) && !isHardStateEqual(hardSt, rn.prevHardSt) {
+	if hardSt := r.hardState(); !isHardStateEqual(hardSt, rn.prevHardSt) {
 		return true
 	}
 	if r.raftLog.hasNextUnstableSnapshot() {
