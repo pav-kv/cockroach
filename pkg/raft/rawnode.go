@@ -253,7 +253,7 @@ func (rn *RawNode) Ready() Ready {
 	if needStorageAppendMsg(r, rd) {
 		rd.Messages = append(rd.Messages, newStorageAppendMsg(r, rd))
 	}
-	if needStorageApplyMsg(rd) {
+	if len(rd.CommittedEntries) != 0 {
 		rd.Messages = append(rd.Messages, newStorageApplyMsg(r, rd))
 	}
 	r.msgsAfterAppend = nil
@@ -403,9 +403,6 @@ func newStorageAppendRespMsg(r *raft, rd Ready) pb.Message {
 	}
 	return m
 }
-
-func needStorageApplyMsg(rd Ready) bool     { return len(rd.CommittedEntries) > 0 }
-func needStorageApplyRespMsg(rd Ready) bool { return needStorageApplyMsg(rd) }
 
 // newStorageApplyMsg creates the message that should be sent to the local
 // apply thread to instruct it to apply committed log entries. The message
