@@ -499,6 +499,34 @@ exp:    %s
 	}
 }
 
+func TestPrettyPrintEx(t *testing.T) {
+	for _, tt := range []struct {
+		key roachpb.Key
+		exp string
+		typ keys.ValueType
+	}{
+		{keys.StoreIdentKey(), "/Local/Store/storeIdent", "/storeIdent"},
+		{keys.StoreNodeTombstoneKey(123), "/Local/Store/nodeTombstone/n123", "/nodeTombstone"},
+
+		{keys.RangeAppliedStateKey(roachpb.RangeID(1000001)), "/Local/RangeID/1000001/r/RangeAppliedState", "RangeAppliedState"},
+		{keys.RaftTruncatedStateKey(roachpb.RangeID(1000001)), "/Local/RangeID/1000001/u/RaftTruncatedState", "RaftTruncatedState"},
+		{keys.RangeVersionKey(roachpb.RangeID(1000001)), "/Local/RangeID/1000001/r/RangeVersion", "RangeVersion"},
+		{keys.RangeGCHintKey(roachpb.RangeID(1000001)), "/Local/RangeID/1000001/r/RangeGCHint", "RangeGCHint"},
+
+		{keys.RaftHardStateKey(roachpb.RangeID(1000001)), "/Local/RangeID/1000001/u/RaftHardState", "RaftHardState"},
+		{keys.RaftTruncatedStateKey(roachpb.RangeID(1000001)), "/Local/RangeID/1000001/u/RaftTruncatedState", "RaftTruncatedState"},
+		{keys.RaftLogKey(roachpb.RangeID(1000001), kvpb.RaftIndex(200001)), "/Local/RangeID/1000001/u/RaftLog/logIndex:200001", "RaftLog"},
+
+		{keys.LocalMax, `/Meta1/""`, "/Meta1"}, // LocalMax == Meta1Prefix
+	} {
+		t.Run("", func(t *testing.T) {
+			keyPP, typ := keys.PrettyPrintEx(nil /* valDirs */, tt.key)
+			require.Equal(t, tt.exp, keyPP)
+			require.Equal(t, tt.typ, typ)
+		})
+	}
+}
+
 // massagePrettyPrintedSpanForTest does some transformations on pretty-printed spans and keys:
 // - if dirs is not nil, replace all ints with their ones' complement for
 // descendingly-encoded columns.
