@@ -713,7 +713,6 @@ func safeFormatInternal(
 				return
 			}
 
-			safeFormatted := false
 			var buf redact.StringBuilder
 			for _, e := range k.Entries {
 				if bytes.HasPrefix(key, e.prefix) && e.sfFunc != nil {
@@ -721,35 +720,30 @@ func safeFormatInternal(
 					b.Print(e.Name)
 					e.sfFunc(&buf, valDirs, key, quoteRawKeys)
 					b.Print(buf.RedactableString())
-					safeFormatted = true
+					return
 				}
 			}
 
-			if !safeFormatted {
-				hasPrefix := false
-				for _, e := range k.Entries {
-					if bytes.HasPrefix(key, e.prefix) {
-						hasPrefix = true
-						key = key[len(e.prefix):]
-						b.Print(redact.Safe(e.Name))
-						e.ppFunc(&buf, valDirs, key)
-						b.Print(buf.RedactableString())
-						break
-					}
+			for _, e := range k.Entries {
+				if bytes.HasPrefix(key, e.prefix) {
+					key = key[len(e.prefix):]
+					b.Print(redact.Safe(e.Name))
+					e.ppFunc(&buf, valDirs, key)
+					b.Print(buf.RedactableString())
+					return
 				}
-				if !hasPrefix {
-					key = key[len(k.start):]
-					if quoteRawKeys {
-						b.Print("/")
-						b.Print(`"`)
-					}
-					if _, err := b.Write([]byte(key)); err != nil {
-						b.Printf("<invalid: %s>", err)
-					}
-					if quoteRawKeys {
-						b.Print(`"`)
-					}
-				}
+			}
+
+			key = key[len(k.start):]
+			if quoteRawKeys {
+				b.Print("/")
+				b.Print(`"`)
+			}
+			if _, err := b.Write([]byte(key)); err != nil {
+				b.Printf("<invalid: %s>", err)
+			}
+			if quoteRawKeys {
+				b.Print(`"`)
 			}
 			return
 		}
