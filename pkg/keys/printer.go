@@ -704,53 +704,54 @@ func safeFormatInternal(
 
 	helper := func(b *redact.StringBuilder, key roachpb.Key) {
 		for _, k := range KeyDict {
-			if key.Compare(k.start) >= 0 && (k.end == nil || key.Compare(k.end) <= 0) {
-				b.Print(k.Name)
-				if k.end != nil && k.end.Compare(key) == 0 {
-					b.Print(redact.Safe("/Max"))
-					return
-				}
-
-				safeFormatted := false
-				var buf redact.StringBuilder
-				for _, e := range k.Entries {
-					if bytes.HasPrefix(key, e.prefix) && e.sfFunc != nil {
-						key = key[len(e.prefix):]
-						b.Print(e.Name)
-						e.sfFunc(&buf, valDirs, key, quoteRawKeys)
-						b.Print(buf.RedactableString())
-						safeFormatted = true
-					}
-				}
-
-				if !safeFormatted {
-					hasPrefix := false
-					for _, e := range k.Entries {
-						if bytes.HasPrefix(key, e.prefix) {
-							hasPrefix = true
-							key = key[len(e.prefix):]
-							b.Print(redact.Safe(e.Name))
-							e.ppFunc(&buf, valDirs, key)
-							b.Print(buf.RedactableString())
-							break
-						}
-					}
-					if !hasPrefix {
-						key = key[len(k.start):]
-						if quoteRawKeys {
-							b.Print("/")
-							b.Print(`"`)
-						}
-						if _, err := b.Write([]byte(key)); err != nil {
-							b.Printf("<invalid: %s>", err)
-						}
-						if quoteRawKeys {
-							b.Print(`"`)
-						}
-					}
-				}
+			if key.Compare(k.start) < 0 || (k.end != nil && key.Compare(k.end) > 0) {
+				continue
+			}
+			b.Print(k.Name)
+			if k.end != nil && k.end.Compare(key) == 0 {
+				b.Print(redact.Safe("/Max"))
 				return
 			}
+
+			safeFormatted := false
+			var buf redact.StringBuilder
+			for _, e := range k.Entries {
+				if bytes.HasPrefix(key, e.prefix) && e.sfFunc != nil {
+					key = key[len(e.prefix):]
+					b.Print(e.Name)
+					e.sfFunc(&buf, valDirs, key, quoteRawKeys)
+					b.Print(buf.RedactableString())
+					safeFormatted = true
+				}
+			}
+
+			if !safeFormatted {
+				hasPrefix := false
+				for _, e := range k.Entries {
+					if bytes.HasPrefix(key, e.prefix) {
+						hasPrefix = true
+						key = key[len(e.prefix):]
+						b.Print(redact.Safe(e.Name))
+						e.ppFunc(&buf, valDirs, key)
+						b.Print(buf.RedactableString())
+						break
+					}
+				}
+				if !hasPrefix {
+					key = key[len(k.start):]
+					if quoteRawKeys {
+						b.Print("/")
+						b.Print(`"`)
+					}
+					if _, err := b.Write([]byte(key)); err != nil {
+						b.Printf("<invalid: %s>", err)
+					}
+					if quoteRawKeys {
+						b.Print(`"`)
+					}
+				}
+			}
+			return
 		}
 		// If we reach this point, the key is not recognized based on KeyDict.
 		// Print the raw bytes instead.
