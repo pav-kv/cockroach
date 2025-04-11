@@ -75,14 +75,11 @@ var KeyDict KeyComprehensionTable
 var (
 	// ConstKeyOverrides provides overrides that define how to translate specific
 	// pretty-printed keys.
-	ConstKeyOverrides = []struct {
-		Name  redact.SafeString
-		Value roachpb.Key
-	}{
-		{"/Max", MaxKey},
-		{"/Min", MinKey},
-		{"/Meta1/Max", Meta1KeyMax},
-		{"/Meta2/Max", Meta2KeyMax},
+	ConstKeyOverrides = map[string]redact.SafeString{
+		string(MinKey):      "/Min",
+		string(MaxKey):      "/Max",
+		string(Meta1KeyMax): "/Meta1/Max",
+		string(Meta2KeyMax): "/Meta2/Max",
 	}
 
 	// keyofKeyDict means the key of suffix which is itself a key,
@@ -696,10 +693,8 @@ func SafeFormat(w redact.SafeWriter, valDirs []encoding.Direction, key roachpb.K
 func safeFormatInternal(
 	valDirs []encoding.Direction, key roachpb.Key, quoteRawKeys QuoteOpt,
 ) redact.RedactableString {
-	for _, k := range ConstKeyOverrides {
-		if key.Equal(k.Value) {
-			return redact.Sprint(k.Name)
-		}
+	if k, found := ConstKeyOverrides[string(key)]; found {
+		return redact.Sprint(k)
 	}
 
 	helper := func(b *redact.StringBuilder, key roachpb.Key) {
