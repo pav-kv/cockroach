@@ -2095,31 +2095,33 @@ func PeekLength(b []byte) (int, error) {
 // separator.
 // The directions each value is encoded may be provided. If valDirs is nil,
 // all values are decoded and printed with the default direction (ascending).
-func PrettyPrintValue(buf *redact.StringBuilder, valDirs []Direction, b []byte, sep string) {
-	safeSep := redact.SafeString(sep)
-	allDecoded := prettyPrintValueImpl(buf, valDirs, b, safeSep)
-	if allDecoded {
+func PrettyPrintValue(
+	buf *redact.StringBuilder, valDirs []Direction, b []byte, sep redact.SafeString,
+) {
+	if allDecoded := prettyPrintValueImpl(buf, valDirs, b, sep); allDecoded {
 		return
 	}
-	// If we failed to decoded everything above, assume the key was the result of a
-	// `PrefixEnd()`. Attempt to undo PrefixEnd & retry the process, otherwise return
-	// what we were able to decode.
-	if undoPrefixEnd, ok := UndoPrefixEnd(b); ok {
-		// When we UndoPrefixEnd, we may have lost a tail of 0xFFs. Try to add
-		// enough of them to get something decoded. This is best-effort, we have to stop
-		// somewhere.
-		cap := 20
-		if len(valDirs) > len(b) {
-			cap = len(valDirs) - len(b)
+	// If we failed to decoded everything above, assume the key was the result of
+	// a `PrefixEnd()`. Attempt to undo PrefixEnd and retry the process, otherwise
+	// return what we were able to decode.
+	undoPrefixEnd, ok := UndoPrefixEnd(b)
+	if !ok {
+		return
+	}
+	// When we UndoPrefixEnd, we may have lost a tail of 0xFFs. Try to add enough
+	// of them to get something decoded. This is best-effort, we have to stop
+	// somewhere.
+	cap := 20
+	if len(valDirs) > len(b) {
+		cap = len(valDirs) - len(b)
+	}
+	for i := 0; i < cap; i++ {
+		if allDecoded := prettyPrintValueImpl(buf, valDirs, undoPrefixEnd, sep); allDecoded {
+			buf.Reset()
+			buf.Print(sep + "PrefixEnd")
+			return
 		}
-		for i := 0; i < cap; i++ {
-			if allDecoded := prettyPrintValueImpl(buf, valDirs, undoPrefixEnd, safeSep); allDecoded {
-				buf.Reset()
-				buf.Print(sep + "PrefixEnd")
-				return
-			}
-			undoPrefixEnd = append(undoPrefixEnd, 0xFF)
-		}
+		undoPrefixEnd = append(undoPrefixEnd, 0xFF)
 	}
 }
 
@@ -2162,15 +2164,13 @@ func prettyPrintValuesWithTypesImpl(
 	for len(b) > 0 {
 		var valDir Direction
 		if len(valDirs) > 0 {
-			valDir = valDirs[0]
-			valDirs = valDirs[1:]
+			valDir, valDirs = valDirs[0], valDirs[1:]
 		}
 
 		bb, s, err := prettyPrintFirstValue(valDir, b)
 		if err != nil {
-			// If we fail to decode, mark as unknown and attempt
-			// to continue - it's possible we can still decode the
-			// remainder of the key bytes.
+			// If we fail to decode, mark as unknown and attempt to continue - it's
+			// possible we can still decode the remainder of the key bytes.
 			allDecoded = false
 			vals = append(vals, "???")
 			types = append(types, Unknown)
@@ -2188,21 +2188,18 @@ func prettyPrintValueImpl(
 ) bool {
 	allDecoded := true
 	for len(b) > 0 {
-		// If there are more values than encoding directions specified,
-		// valDir will contain the 0 value of Direction.
-		// prettyPrintFirstValue will then use the default encoding
-		// direction per each value type.
+		// If there are more values than encoding directions specified, valDir is
+		// the 0 value of Direction, and prettyPrintFirstValue uses the default
+		// encoding direction per each value type.
 		var valDir Direction
 		if len(valDirs) > 0 {
-			valDir = valDirs[0]
-			valDirs = valDirs[1:]
+			valDir, valDirs = valDirs[0], valDirs[1:]
 		}
 
 		bb, s, err := prettyPrintFirstValue(valDir, b)
 		if err != nil {
-			// If we fail to decode, mark as unknown and attempt
-			// to continue - it's possible we can still decode the
-			// remainder of the key bytes.
+			// If we fail to decode, mark as unknown and attempt to continue - it's
+			// possible we can still decode the remainder of the key bytes.
 			allDecoded = false
 			// Mark the separator as safe.
 			buf.Print(sep)

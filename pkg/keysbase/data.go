@@ -20,7 +20,7 @@ func PrefixEnd(b []byte) []byte {
 	end := make([]byte, len(b))
 	copy(end, b)
 	for i := len(end) - 1; i >= 0; i-- {
-		end[i] = end[i] + 1
+		end[i]++
 		if end[i] != 0 {
 			return end[:i+1]
 		}
