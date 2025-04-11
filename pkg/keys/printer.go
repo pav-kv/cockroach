@@ -84,12 +84,9 @@ var (
 
 	// keyofKeyDict means the key of suffix which is itself a key,
 	// should recursively pretty print it, see issue #3228
-	keyOfKeyDict = []struct {
-		name   redact.SafeString
-		prefix []byte
-	}{
-		{name: "/Meta2", prefix: Meta2Prefix},
-		{name: "/Meta1", prefix: Meta1Prefix},
+	keyOfKeyDict = map[byte]redact.SafeString{
+		meta1PrefixByte: "/Meta1",
+		meta2PrefixByte: "/Meta2",
 	}
 
 	rangeIDSuffixDict = map[string]struct {
@@ -748,15 +745,15 @@ func safeFormatInternal(
 	}
 
 	var b redact.StringBuilder
-	for _, k := range keyOfKeyDict {
-		if bytes.HasPrefix(key, k.prefix) {
-			key = key[len(k.prefix):]
+	if len(key) >= 1 {
+		if k, found := keyOfKeyDict[key[0]]; found {
+			key = key[1:]
 			helper(&b, key)
 			str := b.RedactableString()
 			if len(str) > 0 && strings.Index(str.StripMarkers(), "/") != 0 {
-				return redact.Sprintf("%v/%v", k.name, str)
+				return redact.Sprintf("%v/%v", k, str)
 			}
-			return redact.Sprintf("%v%v", k.name, str)
+			return redact.Sprintf("%v%v", k, str)
 		}
 	}
 	helper(&b, key)
