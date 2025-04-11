@@ -246,7 +246,9 @@ func MakeRangeIDReplicatedPrefix(rangeID roachpb.RangeID) roachpb.Key {
 
 // makeRangeIDReplicatedKey creates a range-local key based on the range's
 // Range ID, metadata key suffix, and optional detail.
-func makeRangeIDReplicatedKey(rangeID roachpb.RangeID, suffix, detail roachpb.RKey) roachpb.Key {
+func makeRangeIDReplicatedKey(
+	rangeID roachpb.RangeID, suffix string, detail roachpb.RKey,
+) roachpb.Key {
 	if len(suffix) != localSuffixLength {
 		panic(fmt.Sprintf("suffix len(%q) != %d", suffix, localSuffixLength))
 	}
@@ -375,7 +377,7 @@ func MakeRangeIDUnreplicatedPrefix(rangeID roachpb.RangeID) roachpb.Key {
 // makeRangeIDUnreplicatedKey creates a range-local unreplicated key based
 // on the range's Range ID, metadata key suffix, and optional detail.
 func makeRangeIDUnreplicatedKey(
-	rangeID roachpb.RangeID, suffix roachpb.RKey, detail roachpb.RKey,
+	rangeID roachpb.RangeID, suffix string, detail roachpb.RKey,
 ) roachpb.Key {
 	if len(suffix) != localSuffixLength {
 		panic(fmt.Sprintf("suffix len(%q) != %d", suffix, localSuffixLength))

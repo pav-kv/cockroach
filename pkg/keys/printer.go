@@ -95,32 +95,32 @@ var (
 		{name: "/Meta1", prefix: Meta1Prefix},
 	}
 
-	rangeIDSuffixDict = []struct {
+	rangeIDSuffixDict = map[string]struct {
 		name   string
-		suffix []byte
 		ppFunc func(buf *redact.StringBuilder, key roachpb.Key)
 		psFunc func(rangeID roachpb.RangeID, input string) (string, roachpb.Key)
 	}{
-		{name: "AbortSpan", suffix: LocalAbortSpanSuffix, ppFunc: abortSpanKeyPrint, psFunc: abortSpanKeyParse},
-		{name: "ReplicatedSharedLocksTransactionLatch",
-			suffix: LocalReplicatedSharedLocksTransactionLatchingKeySuffix,
+		string(LocalAbortSpanSuffix): {
+			name: "AbortSpan", ppFunc: abortSpanKeyPrint, psFunc: abortSpanKeyParse,
+		},
+		string(LocalReplicatedSharedLocksTransactionLatchingKeySuffix): {
+			name:   "ReplicatedSharedLocksTransactionLatch",
 			ppFunc: replicatedSharedLocksTransactionLatchingKeyPrint,
 		},
-		{name: "RangeTombstone", suffix: LocalRangeTombstoneSuffix},
-		{name: "RaftHardState", suffix: LocalRaftHardStateSuffix},
-		{name: "RangeAppliedState", suffix: LocalRangeAppliedStateSuffix},
-		{name: "RaftLog", suffix: LocalRaftLogSuffix,
-			ppFunc: raftLogKeyPrint,
-			psFunc: raftLogKeyParse,
+		string(LocalRangeTombstoneSuffix):    {name: "RangeTombstone"},
+		string(LocalRaftHardStateSuffix):     {name: "RaftHardState"},
+		string(LocalRangeAppliedStateSuffix): {name: "RangeAppliedState"},
+		string(LocalRaftLogSuffix): {
+			name: "RaftLog", ppFunc: raftLogKeyPrint, psFunc: raftLogKeyParse,
 		},
-		{name: "RaftTruncatedState", suffix: LocalRaftTruncatedStateSuffix},
-		{name: "RangeLastReplicaGCTimestamp", suffix: LocalRangeLastReplicaGCTimestampSuffix},
-		{name: "RangeLease", suffix: LocalRangeLeaseSuffix},
-		{name: "RangePriorReadSummary", suffix: LocalRangePriorReadSummarySuffix},
-		{name: "RangeStats", suffix: LocalRangeStatsLegacySuffix},
-		{name: "RangeGCThreshold", suffix: LocalRangeGCThresholdSuffix},
-		{name: "RangeVersion", suffix: LocalRangeVersionSuffix},
-		{name: "RangeGCHint", suffix: LocalRangeGCHintSuffix},
+		string(LocalRaftTruncatedStateSuffix):          {name: "RaftTruncatedState"},
+		string(LocalRangeLastReplicaGCTimestampSuffix): {name: "RangeLastReplicaGCTimestamp"},
+		string(LocalRangeLeaseSuffix):                  {name: "RangeLease"},
+		string(LocalRangePriorReadSummarySuffix):       {name: "RangePriorReadSummary"},
+		string(LocalRangeStatsLegacySuffix):            {name: "RangeStats"},
+		string(LocalRangeGCThresholdSuffix):            {name: "RangeGCThreshold"},
+		string(LocalRangeVersionSuffix):                {name: "RangeVersion"},
+		string(LocalRangeGCHintSuffix):                 {name: "RangeGCHint"},
 	}
 
 	rangeSuffixDict = []struct {
@@ -374,15 +374,16 @@ func localRangeIDKeyParse(input string) (remainder string, key roachpb.Key) {
 
 	input = mustShiftSlash(input)
 	// Get the suffix.
-	var suffix roachpb.RKey
-	for _, s := range rangeIDSuffixDict {
+	var suffix string
+	// TODO(pav-kv): make a reversed index for quick search.
+	for suf, s := range rangeIDSuffixDict {
 		if strings.HasPrefix(input, s.name) {
 			input = input[len(s.name):]
 			if s.psFunc != nil {
 				remainder, key = s.psFunc(roachpb.RangeID(rangeID), input)
 				return
 			}
-			suffix = roachpb.RKey(s.suffix)
+			suffix = suf
 			break
 		}
 	}
@@ -390,7 +391,7 @@ func localRangeIDKeyParse(input string) (remainder string, key roachpb.Key) {
 	if replicated {
 		maker = makeRangeIDReplicatedKey
 	}
-	if suffix != nil {
+	if suffix != "" {
 		if input != "" {
 			panic(&ErrUglifyUnsupported{errors.New("nontrivial detail")})
 		}
@@ -432,16 +433,15 @@ func localRangeIDKeyPrint(
 
 	// Get the suffix.
 	hasSuffix := false
-	for _, s := range rangeIDSuffixDict {
-		if bytes.HasPrefix(key, s.suffix) {
+	if len(key) >= localSuffixLength {
+		if s, found := rangeIDSuffixDict[string(key[:localSuffixLength])]; found {
 			buf.Printf("/%s", s.name)
-			key = key[len(s.suffix):]
+			key = key[localSuffixLength:]
 			if s.ppFunc != nil && len(key) != 0 {
 				s.ppFunc(buf, key)
 				return
 			}
 			hasSuffix = true
-			break
 		}
 	}
 
@@ -848,6 +848,13 @@ func init() {
 		{Name: "/Tenant", start: TenantTableDataMin, end: TenantTableDataMax, Entries: []DictEntry{
 			{Name: "", prefix: nil, ppFunc: tenantKeyPrint, PSFunc: GetTenantKeyParseFn(tableKeyParse), sfFunc: formatTenantKey},
 		}},
+	}
+
+	for suffix, desc := range rangeIDSuffixDict {
+		if got, want := len(suffix), localSuffixLength; got != want {
+			panic(fmt.Sprintf("RangeID-local suffix must be of length %d, found %s:%q",
+				want, desc.name, suffix))
+		}
 	}
 }
 
