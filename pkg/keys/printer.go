@@ -424,18 +424,16 @@ func localRangeIDKeyParse(input string) (remainder string, key roachpb.Key) {
 func localRangeIDKeyPrint(
 	buf *redact.StringBuilder, valDirs []encoding.Direction, key roachpb.Key,
 ) ValueType {
+	// Get and print the rangeID.
 	if encoding.PeekType(key) != encoding.Int {
 		buf.Printf("/err<%q>", []byte(key))
 		return RawBytes
 	}
-
-	// Get the rangeID.
 	key, i, err := encoding.DecodeVarintAscending(key)
 	if err != nil {
 		buf.Printf("/err<%v:%q>", err, []byte(key))
 		return RawBytes
 	}
-
 	fmt.Fprintf(buf, "/%d", i)
 
 	// Print and remove the rangeID infix specifier.
@@ -443,30 +441,26 @@ func localRangeIDKeyPrint(
 		buf.Printf("/%s", string(key[0]))
 		key = key[1:]
 	}
+	if len(key) == 0 {
+		return RawBytes
+	}
 
 	// Get the suffix.
-	hasSuffix := false
-	typ := RawBytes
 	if len(key) >= localSuffixLength {
 		if s, found := rangeIDSuffixDict[string(key[:localSuffixLength])]; found {
 			buf.Printf("/%s", s.name)
 			key = key[localSuffixLength:]
-			if s.ppFunc != nil && len(key) != 0 {
+			if s.ppFunc != nil {
 				s.ppFunc(buf, key)
-				return ValueType(s.name)
+			} else {
+				decodeKeyPrint(buf, valDirs, key)
 			}
-			hasSuffix = true
-			typ = ValueType(s.name)
+			return ValueType(s.name)
 		}
 	}
 
-	// Get the encode values.
-	if hasSuffix {
-		decodeKeyPrint(buf, valDirs, key)
-	} else {
-		buf.Printf("%q", []byte(key))
-	}
-	return typ
+	buf.Printf("%q", []byte(key))
+	return RawBytes
 }
 
 func localRangeKeyPrint(
