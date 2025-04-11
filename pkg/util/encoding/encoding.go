@@ -2217,17 +2217,15 @@ func prettyPrintValueImpl(
 }
 
 // prettyPrintFirstValue returns a string representation of the first decodable
-// value in the provided byte slice, along with the remaining byte slice
-// after decoding.
+// value in the provided byte slice, along with the remaining byte slice after
+// decoding.
 //
-// Ascending will be the default direction (when dir is the 0 value) for all
-// values.
+// Ascending is the default direction (when dir is the 0 value) for all values.
 func prettyPrintFirstValue(dir Direction, b []byte) ([]byte, string, error) {
 	var err error
 	switch typ := PeekType(b); typ {
 	case Null:
-		b, _ = DecodeIfNull(b)
-		return b, "NULL", nil
+		return b[1:], "NULL", nil
 	case True:
 		return b[1:], "True", nil
 	case False:
@@ -2239,16 +2237,12 @@ func prettyPrintFirstValue(dir Direction, b []byte) ([]byte, string, error) {
 		if typ == ArrayKeyDesc {
 			encDir = Descending
 		}
+		buf := b[1:]
 		var build strings.Builder
-		buf, err := ValidateAndConsumeArrayKeyMarker(b, encDir)
-		if err != nil {
-			return nil, "", err
-		}
 		build.WriteString("ARRAY[")
-		first := true
 		// Use the array key decoding logic, but instead of calling out
 		// to keyside.Decode, just make a recursive call.
-		for {
+		for first := true; ; first = false {
 			if len(buf) == 0 {
 				return nil, "", errors.AssertionFailedf("invalid array (unterminated)")
 			}
@@ -2258,25 +2252,19 @@ func prettyPrintFirstValue(dir Direction, b []byte) ([]byte, string, error) {
 			}
 			var next string
 			if IsNextByteArrayEncodedNull(buf, dir) {
-				next = "NULL"
-				buf = buf[1:]
-			} else {
-				buf, next, err = prettyPrintFirstValue(dir, buf)
-				if err != nil {
-					return nil, "", err
-				}
+				buf, next = buf[1:], "NULL"
+			} else if buf, next, err = prettyPrintFirstValue(dir, buf); err != nil {
+				return nil, "", err
 			}
 			if !first {
 				build.WriteString(",")
 			}
 			build.WriteString(next)
-			first = false
 		}
 		build.WriteString("]")
 		return buf, build.String(), nil
 	case NotNull:
-		b, _ = DecodeIfNotNull(b)
-		return b, "!NULL", nil
+		return b[1:], "!NULL", nil
 	case Int:
 		var i int64
 		if dir == Descending {
@@ -2378,30 +2366,29 @@ func prettyPrintFirstValue(dir Direction, b []byte) ([]byte, string, error) {
 			return b, "", err
 		}
 		return b, d.StringNanos(), nil
-	default:
-		if len(b) >= 1 {
-			switch b[0] {
-			case jsonInvertedIndex:
-				var str string
-				str, b, err = prettyPrintInvertedIndexKey(b)
-				if err != nil {
-					return b, "", err
-				}
-				if str == "" {
-					return prettyPrintFirstValue(dir, b)
-				}
-				return b, str, nil
-			case jsonEmptyArray:
-				return b[1:], "[]", nil
-			case jsonEmptyObject:
-				return b[1:], "{}", nil
-			case emptyArray:
-				return b[1:], "[]", nil
-			}
-		}
-		// This shouldn't ever happen, but if it does, return an empty slice.
-		return nil, strconv.Quote(string(b)), nil
 	}
+
+	// This shouldn't ever happen, but if it does, return an empty slice.
+	if len(b) == 0 {
+		return nil, strconv.Quote(""), nil
+	}
+	switch b[0] {
+	case jsonInvertedIndex:
+		var str string
+		if str, b, err = prettyPrintInvertedIndexKey(b); err != nil {
+			return b, "", err
+		} else if str == "" {
+			return prettyPrintFirstValue(dir, b)
+		}
+		return b, str, nil
+	case jsonEmptyArray:
+		return b[1:], "[]", nil
+	case jsonEmptyObject:
+		return b[1:], "{}", nil
+	case emptyArray:
+		return b[1:], "[]", nil
+	}
+	return nil, strconv.Quote(string(b)), nil
 }
 
 // UndoPrefixEnd is a partial inverse for roachpb.Key.PrefixEnd.
