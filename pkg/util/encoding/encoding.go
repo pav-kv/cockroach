@@ -1793,10 +1793,8 @@ const (
 var typMap [256]Type
 
 func init() {
-	buf := []byte{0}
 	for i := range typMap {
-		buf[0] = byte(i)
-		typMap[i] = slowPeekType(buf)
+		typMap[i] = slowPeekType(byte(i))
 	}
 }
 
@@ -1808,87 +1806,85 @@ func PeekType(b []byte) Type {
 	return Unknown
 }
 
-// slowPeekType is the old implementation of PeekType. It's used to generate
-// the lookup table for PeekType.
-func slowPeekType(b []byte) Type {
-	if len(b) >= 1 {
-		m := b[0]
-		switch {
-		case m == encodedNull, m == encodedNullDesc:
-			return Null
-		case m == encodedNotNull, m == encodedNotNullDesc:
-			return NotNull
-		case m == arrayKeyMarker:
-			return ArrayKeyAsc
-		case m == arrayKeyDescendingMarker:
-			return ArrayKeyDesc
-		case m == jsonNullKeyMarker:
-			return JSONNull
-		case m == jsonNullKeyDescendingMarker:
-			return JSONNullDesc
-		case m == jsonStringKeyMarker:
-			return JSONString
-		case m == jsonStringKeyDescendingMarker:
-			return JSONStringDesc
-		case m == jsonNumberKeyMarker:
-			return JSONNumber
-		case m == jsonNumberKeyDescendingMarker:
-			return JSONNumberDesc
-		case m == jsonFalseKeyMarker:
-			return JSONFalse
-		case m == jsonFalseKeyDescendingMarker:
-			return JSONFalseDesc
-		case m == jsonTrueKeyMarker:
-			return JSONTrue
-		case m == jsonTrueKeyDescendingMarker:
-			return JSONTrueDesc
-		case m == jsonArrayKeyMarker:
-			return JSONArray
-		case m == jsonArrayKeyDescendingMarker:
-			return JSONArrayDesc
-		case m == jsonEmptyArrayKeyMarker:
-			return JsonEmptyArray
-		case m == jsonEmptyArrayKeyDescendingMarker:
-			return JsonEmptyArrayDesc
-		case m == jsonObjectKeyMarker:
-			return JSONObject
-		case m == jsonObjectKeyDescendingMarker:
-			return JSONObjectDesc
-		case m == bytesMarker:
-			return Bytes
-		case m == bytesDescMarker:
-			return BytesDesc
-		case m == bitArrayMarker:
-			return BitArray
-		case m == bitArrayDescMarker:
-			return BitArrayDesc
-		case m == timeMarker:
-			return Time
-		case m == timeTZMarker:
-			return TimeTZ
-		case m == geoMarker:
-			return Geo
-		case m == box2DMarker:
-			return Box2D
-		case m == geoDescMarker:
-			return GeoDesc
-		case m == byte(Array):
-			return Array
-		case m == byte(True):
-			return True
-		case m == byte(False):
-			return False
-		case m == durationBigNegMarker, m == durationMarker, m == durationBigPosMarker:
-			return Duration
-		case m >= IntMin && m <= IntMax:
-			return Int
-		case m >= floatNaN && m <= floatNaNDesc:
-			return Float
-		case m >= decimalNaN && m <= decimalNaNDesc:
-			return Decimal
-		case m == voidMarker:
-			return Void
-		}
+// slowPeekType is used to generate the lookup table for PeekType.
+func slowPeekType(m byte) Type {
+	switch m {
+	case encodedNull, encodedNullDesc:
+		return Null
+	case encodedNotNull, encodedNotNullDesc:
+		return NotNull
+	case arrayKeyMarker:
+		return ArrayKeyAsc
+	case arrayKeyDescendingMarker:
+		return ArrayKeyDesc
+	case jsonNullKeyMarker:
+		return JSONNull
+	case jsonNullKeyDescendingMarker:
+		return JSONNullDesc
+	case jsonStringKeyMarker:
+		return JSONString
+	case jsonStringKeyDescendingMarker:
+		return JSONStringDesc
+	case jsonNumberKeyMarker:
+		return JSONNumber
+	case jsonNumberKeyDescendingMarker:
+		return JSONNumberDesc
+	case jsonFalseKeyMarker:
+		return JSONFalse
+	case jsonFalseKeyDescendingMarker:
+		return JSONFalseDesc
+	case jsonTrueKeyMarker:
+		return JSONTrue
+	case jsonTrueKeyDescendingMarker:
+		return JSONTrueDesc
+	case jsonArrayKeyMarker:
+		return JSONArray
+	case jsonArrayKeyDescendingMarker:
+		return JSONArrayDesc
+	case jsonEmptyArrayKeyMarker:
+		return JsonEmptyArray
+	case jsonEmptyArrayKeyDescendingMarker:
+		return JsonEmptyArrayDesc
+	case jsonObjectKeyMarker:
+		return JSONObject
+	case jsonObjectKeyDescendingMarker:
+		return JSONObjectDesc
+	case bytesMarker:
+		return Bytes
+	case bytesDescMarker:
+		return BytesDesc
+	case bitArrayMarker:
+		return BitArray
+	case bitArrayDescMarker:
+		return BitArrayDesc
+	case timeMarker:
+		return Time
+	case timeTZMarker:
+		return TimeTZ
+	case geoMarker:
+		return Geo
+	case box2DMarker:
+		return Box2D
+	case geoDescMarker:
+		return GeoDesc
+	case byte(Array):
+		return Array
+	case byte(True):
+		return True
+	case byte(False):
+		return False
+	case durationBigNegMarker, durationMarker, durationBigPosMarker:
+		return Duration
+	case voidMarker:
+		return Void
+	}
+	switch {
+	case m >= IntMin && m <= IntMax:
+		return Int
+	case m >= floatNaN && m <= floatNaNDesc:
+		return Float
+	case m >= decimalNaN && m <= decimalNaNDesc:
+		return Decimal
 	}
 	return Unknown
 }
