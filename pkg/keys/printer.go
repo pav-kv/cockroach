@@ -706,6 +706,8 @@ func safeFormatInternal(
 			}
 
 			var buf redact.StringBuilder
+			// TODO(pav-kv): k.Entries should be sorted, and we should be able to
+			// binary search into it.
 			for _, e := range k.Entries {
 				if !bytes.HasPrefix(key, e.prefix) {
 					continue
