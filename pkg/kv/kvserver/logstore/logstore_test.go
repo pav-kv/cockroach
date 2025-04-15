@@ -63,10 +63,10 @@ func TestRaftStorageWrites(t *testing.T) {
 		t.Helper()
 		var newState RaftState
 		batch := writeBatch(func(rw storage.ReadWriter) {
-			require.NoError(t, storeHardState(ctx, rw, sl, hs))
-			var err error
-			newState, err = logAppend(ctx, sl.RaftLogPrefix(), rw, state, entries)
-			require.NoError(t, err)
+			wb := writeBuilder{rw: rw, sl: sl, rs: state}
+			require.NoError(t, wb.setHardState(ctx, hs))
+			require.NoError(t, wb.logAppend(ctx, entries))
+			newState = wb.rs
 		})
 		state = newState
 		require.Equal(t, stats(), state.ByteSize)

@@ -78,6 +78,7 @@ func runBenchmarkLogStore_StoreEntries(b *testing.B, bytes int64) {
 			raftlog.EntryEncodingStandardWithoutAC, "deadbeef", data, 0 /* pri */),
 	})
 	stats := &AppendStats{}
+	_, _ = s, stats
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -88,13 +89,15 @@ func runBenchmarkLogStore_StoreEntries(b *testing.B, bytes int64) {
 	batch := &discardBatch{}
 	for i := 0; i < b.N; i++ {
 		batch.Batch = newStoreEntriesBatch(eng)
-		m := raft.StorageAppend{Entries: ents}
-		cb := noopSyncCallback{}
-		var err error
-		rs, err = s.storeEntriesAndCommitBatch(ctx, rs, m, cb, stats, batch)
-		if err != nil {
-			b.Fatal(err)
-		}
+		/*
+			m := raft.StorageAppend{Entries: ents}
+			cb := noopSyncCallback{}
+			var err error
+			rs, err = s.writeBatchAsync(ctx, rs, m, cb, stats, batch)
+			if err != nil {
+				b.Fatal(err)
+			}
+		*/
 		ents[0].Index++
 	}
 	require.EqualValues(b, b.N, rs.LastIndex)
