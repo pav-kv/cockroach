@@ -107,8 +107,7 @@ func Test_handleRaftReadyStats_SafeFormat(t *testing.T) {
 			numConfChangeEntries: 6,
 		},
 		append: logstore.AppendStats{
-			Begin: ts(2),
-			End:   ts(3),
+			Prepare: ts(3).Sub(ts(2)),
 			EntryStats: logstore.EntryStats{
 				RegularEntries:    7,
 				RegularBytes:      1024,
