@@ -107,19 +107,19 @@ type AppendStats struct {
 	Prepare time.Duration
 
 	EntryStats
-	PebbleStats
+	Pebble PebbleStats
 }
 
 type PebbleStats struct {
-	PebbleBegin crtime.Mono
-	PebbleEnd   crtime.Mono
-	PebbleBytes int64
+	Begin crtime.Mono
+	End   crtime.Mono
+	Bytes int64
 	// Only set when !NonBlocking, which means almost never, since
 	// kv.raft_log.non_blocking_synchronization.enabled defaults to true.
-	PebbleCommitStats storage.BatchCommitStats
+	CommitStats storage.BatchCommitStats
 
 	Sync bool
-	// If true, PebbleEnd-PebbleBegin does not include the sync time.
+	// If true, End-Begin does not include the sync time.
 	NonBlocking bool
 }
 
@@ -241,8 +241,8 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 	// communicates an important invariant, but is hard to grok now and can be
 	// outdated. Raft invariants are in the responsibility of the layer above
 	// (Replica), so this comment might need to move.
-	stats.PebbleBegin = crtime.NowMono()
-	stats.PebbleBytes = int64(batch.Len())
+	stats.Pebble.Begin = crtime.NowMono()
+	stats.Pebble.Bytes = int64(batch.Len())
 	// We want a timely sync in two cases:
 	//	1. There are raft messages (e.g. MsgVoteResp and MsgAppResp) conditional
 	//	on this write being durable. Sending these messages is on the critical path
@@ -276,7 +276,7 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 			const expl = "while committing batch without sync wait"
 			return RaftState{}, errors.Wrap(err, expl)
 		}
-		stats.PebbleEnd = crtime.NowMono()
+		stats.Pebble.End = crtime.NowMono()
 		// Instead, enqueue that waiting on the SyncWaiterLoop, who will signal the
 		// callback when the write completes.
 		waiterCallback := nonBlockingSyncWaiterCallbackPool.Get().(*nonBlockingSyncWaiterCallback)
@@ -285,7 +285,7 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 			cb:             cb,
 			onDone:         m.Ack(),
 			batch:          batch,
-			logCommitBegin: stats.PebbleBegin,
+			logCommitBegin: stats.Pebble.Begin,
 		}
 		s.SyncWaiter.enqueue(ctx, batch, waiterCallback)
 		// Do not Close batch on return. Will be Closed by SyncWaiterLoop.
@@ -295,15 +295,15 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 			const expl = "while committing batch"
 			return RaftState{}, errors.Wrap(err, expl)
 		}
-		stats.PebbleEnd = crtime.NowMono()
-		stats.PebbleCommitStats = batch.CommitStats()
+		stats.Pebble.End = crtime.NowMono()
+		stats.Pebble.CommitStats = batch.CommitStats()
 		if wantsSync {
-			commitDur := stats.PebbleEnd.Sub(stats.PebbleBegin)
+			commitDur := stats.Pebble.End.Sub(stats.Pebble.Begin)
 			cb.OnLogSync(ctx, m.Ack(), WriteStats{CommitDur: commitDur})
 		}
 	}
-	stats.Sync = wantsSync
-	stats.NonBlocking = nonBlockingSync
+	stats.Pebble.Sync = wantsSync
+	stats.Pebble.NonBlocking = nonBlockingSync
 
 	if overwriting {
 		// We may have just overwritten parts of the log which contain
