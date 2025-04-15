@@ -781,7 +781,7 @@ type handleRaftReadyStats struct {
 // SafeFormat implements redact.SafeFormatter
 func (s handleRaftReadyStats) SafeFormat(p redact.SafePrinter, _ rune) {
 	dTotal := s.tEnd.Sub(s.tBegin)
-	dAppend := s.append.End.Sub(s.append.Begin)
+	dAppend := s.append.Prepare
 	dApply := s.tApplicationEnd.Sub(s.tApplicationBegin)
 	dPebble := s.append.PebbleEnd.Sub(s.append.PebbleBegin)
 	dSnap := s.tSnapEnd.Sub(s.tSnapBegin)

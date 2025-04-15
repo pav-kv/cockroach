@@ -102,8 +102,9 @@ func (e *EntryStats) Add(delta EntryStats) {
 
 // AppendStats describes a completed log storage append operation.
 type AppendStats struct {
-	Begin crtime.Mono
-	End   crtime.Mono
+	// Prepare contains the duration of preparing the write. Includes the time to
+	// store the sideloaded entries, and to prepare the Pebble write batch.
+	Prepare time.Duration
 
 	EntryStats
 
@@ -196,7 +197,7 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 	if len(m.Entries) > 0 {
 		firstPurge := kvpb.RaftIndex(m.Entries[0].Index) // first new entry written
 		overwriting = firstPurge <= prevLastIndex
-		stats.Begin = crtime.NowMono()
+		begin := crtime.NowMono()
 		// All of the entries are appended to distinct keys, returning a new
 		// last index.
 		thinEntries, entryStats, err := MaybeSideloadEntries(ctx, m.Entries, s.Sideload)
@@ -212,7 +213,7 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 			const expl = "during append"
 			return RaftState{}, errors.Wrap(err, expl)
 		}
-		stats.End = crtime.NowMono()
+		stats.Prepare = begin.Elapsed()
 	}
 
 	if err := storeHardState(ctx, batch, s.StateLoader, m.HardState); err != nil {
