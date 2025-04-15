@@ -92,14 +92,6 @@ type EntryStats struct {
 	SideloadedBytes   int64
 }
 
-// Add increments the stats with the given delta.
-func (e *EntryStats) Add(delta EntryStats) {
-	e.RegularEntries += delta.RegularEntries
-	e.RegularBytes += delta.RegularBytes
-	e.SideloadedEntries += delta.SideloadedEntries
-	e.SideloadedBytes += delta.SideloadedBytes
-}
-
 // AppendStats describes a completed log storage append operation.
 type AppendStats struct {
 	// Prepare contains the duration of preparing the write. Includes the time to
@@ -175,111 +167,192 @@ func newStoreEntriesBatch(eng storage.Engine) storage.Batch {
 func (s *LogStore) StoreEntries(
 	ctx context.Context, state RaftState, app raft.StorageAppend, cb SyncCallback, stats *AppendStats,
 ) (RaftState, error) {
-	batch := newStoreEntriesBatch(s.Engine)
-	return s.storeEntriesAndCommitBatch(ctx, state, app, cb, stats, batch)
+	wb, err := s.prepareBatch(ctx, state, app)
+	if err != nil {
+		return state, err
+	}
+	if wb.sd.nonBlocking {
+		err = s.writeBatchAsync(ctx, &wb, cb)
+	} else {
+		err = s.writeBatch(ctx, &wb, cb)
+	}
+	if err != nil {
+		return state, err
+	}
+	if err := s.finalizeBatch(ctx, &wb); err != nil {
+		return state, err
+	}
+	*stats = wb.stats
+	return wb.state, nil
 }
 
-// storeEntriesAndCommitBatch is like StoreEntries, but it accepts a
-// storage.Batch, which it takes responsibility for committing and closing.
-func (s *LogStore) storeEntriesAndCommitBatch(
-	ctx context.Context,
-	state RaftState,
-	m raft.StorageAppend,
-	cb SyncCallback,
-	stats *AppendStats,
-	batch storage.Batch,
-) (RaftState, error) {
-	prevLastIndex := state.LastIndex
-	overwriting := false
-	if len(m.Entries) > 0 {
-		overwriting = kvpb.RaftIndex(m.Entries[0].Index) <= prevLastIndex
+type writeBatch struct {
+	batch    storage.Batch
+	entries  []raftpb.Entry
+	ack      raft.StorageAppendAck
+	prevLast kvpb.RaftIndex
+	state    RaftState
+	sd       syncDecision
+	stats    AppendStats
+}
+
+// release de-references all the data held by this batch.
+func (wb *writeBatch) release() {
+	wb.batch = nil
+	// wb.entries = nil
+	wb.ack = raft.StorageAppendAck{}
+}
+
+// close closes this batch and releases all data referenced by it.
+func (wb *writeBatch) close() {
+	wb.batch.Close()
+	wb.release()
+}
+
+func (s *LogStore) prepareBatch(
+	ctx context.Context, state RaftState, app raft.StorageAppend,
+) (_ writeBatch, err error) {
+	wb := writeBatch{
+		ack:      app.Ack(),
+		prevLast: state.LastIndex,
+		sd:       s.syncDecision(state.LastIndex, app),
+	}
+	// Filter out and store/sync the new sideloaded entries first, and make the
+	// corresponding entries in the slice thin. Account for the added bytes and
+	// time spent.
+	var thinEntries []raftpb.Entry
+	if ln := len(app.Entries); ln > 0 {
 		begin := crtime.NowMono()
-		// All of the entries are appended to distinct keys, returning a new
-		// last index.
-		thinEntries, entryStats, err := MaybeSideloadEntries(ctx, m.Entries, s.Sideload)
+		wb.entries = app.Entries
+		entries, entryStats, err := MaybeSideloadEntries(ctx, app.Entries, s.Sideload)
 		if err != nil {
-			const expl = "during sideloading"
-			return RaftState{}, errors.Wrap(err, expl)
+			return writeBatch{}, errors.Wrap(err, "during sideloading")
 		}
-		stats.EntryStats.Add(entryStats) // TODO(pav-kv): just return the stats.
+		thinEntries = entries
+		wb.stats.EntryStats = entryStats
+		wb.stats.Prepare = begin.Elapsed()
 		state.ByteSize += entryStats.SideloadedBytes
-		if state, err = logAppend(
-			ctx, s.StateLoader.RaftLogPrefix(), batch, state, thinEntries,
-		); err != nil {
-			const expl = "during append"
-			return RaftState{}, errors.Wrap(err, expl)
-		}
-		stats.Prepare = begin.Elapsed()
 	}
 
-	if err := storeHardState(ctx, batch, s.StateLoader, m.HardState); err != nil {
-		return RaftState{}, err
-	}
-
-	if ps, err := s.writeBatch(ctx, batch, m, overwriting, cb); err != nil {
-		return RaftState{}, err
-	} else {
-		stats.Pebble = ps
-	}
-	batch = nil // the ownership has been transferred to writeBatch
-
-	if delta, err := s.finalizeWrite(ctx, m.Entries, prevLastIndex); err != nil {
-		return RaftState{}, err
-	} else {
-		// Might have gone negative if the node was recently restarted.
-		state.ByteSize = max(state.ByteSize+delta, 0)
-	}
-	return state, nil
-}
-
-// writeBatch persists the prepared batch to the log storage, and makes sure
-// that the passed-in acknowledgement is handed over to the provided callback
-// after sync.
-//
-// Depending on the kv.raft_log.non_blocking_synchronization.enabled cluster
-// setting and a few other internal reasons, the sync may or may not be
-// blocking. If blocking, the call blocks until after storage sync, and the
-// callback is invoked immediately. Otherwise, the batch is delegated to the
-// SyncWaiter, and the callback is invoked asynchronously.
-//
-// Either way, the effects of the write will be immediately visible to readers
-// of the Engine.
-func (s *LogStore) writeBatch(
-	ctx context.Context,
-	batch storage.Batch,
-	app raft.StorageAppend,
-	overwriting bool,
-	cb SyncCallback,
-) (PebbleStats, error) {
-	// Before returning, Close the batch if we haven't handed ownership of it to a
-	// SyncWaiterLoop. If batch == nil, SyncWaiterLoop is responsible for closing
-	// it once the in-progress disk writes complete.
+	wb.batch = newStoreEntriesBatch(s.Engine)
 	defer func() {
-		if batch != nil {
-			batch.Close()
+		if err != nil {
+			wb.close()
 		}
 	}()
 
-	// Synchronously commit the batch with the Raft log entries and Raft hard
-	// state as we're promising not to lose this data.
-	//
-	// Note that the data is visible to other goroutines before it is synced to
-	// disk. This is fine. The important constraints are that these syncs happen
-	// before the MsgStorageAppend's responses are delivered back to the RawNode.
-	// Our regular locking is sufficient for this and if other goroutines can see
-	// the data early, that's fine. In particular, snapshots are not a problem (I
-	// think they're the only thing that might access log entries or HardState
-	// from other goroutines). Snapshots do not include either the HardState or
-	// uncommitted log entries, and even if they did include log entries that
-	// were not persisted to disk, it wouldn't be a problem because raft does not
-	// infer the that entries are persisted on the node that sends a snapshot.
-	//
-	// TODO(pavelkalinnikov): revisit the comment above (written in 82cbb49). It
-	// communicates an important invariant, but is hard to grok now and can be
-	// outdated. Raft invariants are in the responsibility of the layer above
-	// (Replica), so this comment might need to move.
+	builder := writeBuilder{rw: wb.batch, sl: s.StateLoader, rs: state}
+	if err := builder.setHardState(ctx, app.HardState); err != nil {
+		return writeBatch{}, errors.Wrap(err, "during setHardState")
+	}
+	if err := builder.logAppend(ctx, thinEntries); err != nil {
+		return writeBatch{}, errors.Wrap(err, "during logAppend")
+	}
+	wb.state = builder.rs
+
+	wb.stats.Pebble = PebbleStats{
+		Bytes:       int64(wb.batch.Len()),
+		Sync:        wb.sd.wantsSync,
+		NonBlocking: wb.sd.nonBlocking,
+	}
+	return wb, nil
+}
+
+func (s *LogStore) writeBatch(ctx context.Context, wb *writeBatch, cb SyncCallback) error {
+	defer wb.close()
 	begin := crtime.NowMono()
-	stats := PebbleStats{Bytes: int64(batch.Len())}
+	if err := wb.batch.Commit(wb.sd.willSync); err != nil {
+		return errors.Wrap(err, "while committing batch")
+	}
+	wb.stats.Pebble.WriteDur = begin.Elapsed()
+	wb.stats.Pebble.CommitStats = wb.batch.CommitStats()
+	if wb.sd.wantsSync {
+		cb.OnLogSync(ctx, wb.ack, WriteStats{CommitDur: wb.stats.Pebble.WriteDur})
+	}
+	return nil
+}
+
+// writeBatchAsync writes the prepared raft storage batch, and hands it over to
+// SyncWaiter. When the write is synced, SyncWaiter will close the batch and
+// invoke the passed in sync callback.
+func (s *LogStore) writeBatchAsync(ctx context.Context, wb *writeBatch, cb SyncCallback) error {
+	// Apply the batched updates to the engine and initiate a synchronous disk
+	// write, but don't wait for the write to complete.
+	begin := crtime.NowMono()
+	if err := wb.batch.CommitNoSyncWait(); err != nil {
+		return errors.Wrap(err, "while committing batch without sync wait")
+	}
+	wb.stats.Pebble.WriteDur = begin.Elapsed()
+	// Enqueue that waiting on the SyncWaiterLoop, who will signal the callback
+	// when the write completes.
+	waiterCallback := nonBlockingSyncWaiterCallbackPool.Get().(*nonBlockingSyncWaiterCallback)
+	*waiterCallback = nonBlockingSyncWaiterCallback{
+		ctx:            ctx,
+		cb:             cb,
+		onDone:         wb.ack,
+		batch:          wb.batch,
+		logCommitBegin: begin,
+	}
+	s.SyncWaiter.enqueue(ctx, wb.batch, waiterCallback)
+	wb.release()
+	return nil
+}
+
+func (s *LogStore) finalizeBatch(ctx context.Context, wb *writeBatch) error {
+	// Update raft log entry cache. We clear any older, uncommitted log entries
+	// and cache the latest ones.
+	//
+	// In the blocking log sync case, these entries are already durable. In the
+	// non-blocking case, these entries have been written to the pebble engine (so
+	// reads of the engine will see them), but they are not yet be durable. This
+	// means that the entry cache can lead the durable log. This is allowed by
+	// etcd/raft, which maintains its own tracking of entry durability by
+	// splitting its log into an unstable portion for entries that are not known
+	// to be durable and a stable portion for entries that are known to be
+	// durable.
+	s.EntryCache.Add(s.RangeID, wb.entries, true /* truncate */)
+
+	if !wb.sd.overwriting {
+		return nil
+	}
+	// We may have just overwritten parts of the log which contain sideloaded
+	// SSTables from a previous term (and perhaps discarded some entries that we
+	// didn't overwrite). Remove any such leftover on-disk payloads (we can do
+	// that now because we've committed the deletion just above).
+	//
+	// TODO(pav-kv): this logic is incorrect. There can be entries from lower
+	// terms that got removed.
+	firstPurge := kvpb.RaftIndex(wb.entries[0].Index) // first new entry written
+	purgeTerm := kvpb.RaftTerm(wb.entries[0].Term - 1)
+	lastPurge := wb.prevLast // old end of the log, include in deletion
+	purgedSize, err := maybePurgeSideloaded(ctx, s.Sideload, firstPurge, lastPurge, purgeTerm)
+	if err != nil {
+		return errors.Wrap(err, "while purging sideloaded storage")
+	}
+	wb.state.ByteSize -= purgedSize
+	if wb.state.ByteSize < 0 {
+		// Might have gone negative if node was recently restarted.
+		wb.state.ByteSize = 0
+	}
+	return nil
+}
+
+type syncDecision struct {
+	// overwriting is true if the storage write overwrites some log entries.
+	overwriting bool
+	// wantsSync is true if there are raft events contingent on storage sync, such
+	// as sending vote or append acknowledgements to the proposer.
+	wantsSync bool
+	// willSync is true if the write will be synced.
+	willSync bool
+	// nonBlocking is true if the sync will be non-blocking.
+	nonBlocking bool
+}
+
+func (s *LogStore) syncDecision(prevLast kvpb.RaftIndex, app raft.StorageAppend) syncDecision {
+	sd := syncDecision{
+		overwriting: len(app.Entries) > 0 && kvpb.RaftIndex(app.Entries[0].Index) <= prevLast,
+	}
 	// We want a timely sync in two cases:
 	//	1. There are raft messages (e.g. MsgVoteResp and MsgAppResp) conditional
 	//	on this write being durable. Sending these messages is on the critical path
@@ -288,58 +361,24 @@ func (s *LogStore) writeBatch(
 	//	entries to be removed, we must sync before doing so. This is an internal
 	//	detail here: we could instead do a non-blocking sync and remove sideloaded
 	//	entries asynchronously. See #136416.
-	wantsSync := app.MustSync() || overwriting
-	willSync := wantsSync && !DisableSyncRaftLog.Get(&s.Settings.SV)
-	// Use the non-blocking log sync path if we are performing a log sync ...
-	nonBlockingSync := willSync &&
-		// and the cluster setting is enabled ...
+	sd.wantsSync = app.MustSync() || sd.overwriting
+	sd.willSync = sd.wantsSync && !DisableSyncRaftLog.Get(&s.Settings.SV)
+	// Use the non-blocking log sync path if we are performing a storage sync.
+	sd.nonBlocking = sd.willSync &&
+		// And the cluster setting is enabled.
 		enableNonBlockingRaftLogSync.Get(&s.Settings.SV) &&
-		// and we are not overwriting any previous log entries. If we are
+		// And we are not overwriting any previous log entries. If we are
 		// overwriting, we may need to purge the sideloaded SSTables associated with
 		// overwritten entries. This must be performed after the corresponding
 		// entries are durably replaced and it's easier to ensure proper ordering
 		// using a blocking log sync. This is a rare case, so it's not worth
 		// optimizing for.
-		!overwriting &&
+		!sd.overwriting &&
 		// Also, randomly disable non-blocking sync in test builds to exercise the
 		// interleaved blocking and non-blocking syncs (unless the testing knobs
 		// disable this randomization explicitly).
 		!(buildutil.CrdbTestBuild && !s.DisableSyncLogWriteToss && rand.Intn(2) == 0)
-	if nonBlockingSync {
-		// If non-blocking synchronization is enabled, apply the batched updates to
-		// the engine and initiate a synchronous disk write, but don't wait for the
-		// write to complete.
-		if err := batch.CommitNoSyncWait(); err != nil {
-			return PebbleStats{}, errors.Wrap(err, "while committing batch without sync wait")
-		}
-		stats.WriteDur = begin.Elapsed()
-		// Instead, enqueue that waiting on the SyncWaiterLoop, who will signal the
-		// callback when the write completes.
-		waiterCallback := nonBlockingSyncWaiterCallbackPool.Get().(*nonBlockingSyncWaiterCallback)
-		*waiterCallback = nonBlockingSyncWaiterCallback{
-			ctx:            ctx,
-			cb:             cb,
-			onDone:         app.Ack(),
-			batch:          batch,
-			logCommitBegin: begin,
-		}
-		s.SyncWaiter.enqueue(ctx, batch, waiterCallback)
-		// Do not Close batch on return. Will be Closed by SyncWaiterLoop.
-		batch = nil
-	} else {
-		if err := batch.Commit(willSync); err != nil {
-			return PebbleStats{}, errors.Wrap(err, "while committing batch")
-		}
-		stats.WriteDur = begin.Elapsed()
-		stats.CommitStats = batch.CommitStats()
-		if wantsSync {
-			cb.OnLogSync(ctx, app.Ack(), WriteStats{CommitDur: stats.WriteDur})
-		}
-	}
-	stats.Sync = wantsSync
-	stats.NonBlocking = nonBlockingSync
-
-	return stats, nil
+	return sd
 }
 
 // finalizeWrite updates the log state after the storage write is done. Removes
@@ -434,9 +473,13 @@ var logAppendPool = sync.Pool{
 	},
 }
 
-func storeHardState(
-	ctx context.Context, w storage.Writer, sl StateLoader, hs raftpb.HardState,
-) error {
+type writeBuilder struct {
+	rw storage.ReadWriter
+	sl StateLoader
+	rs RaftState
+}
+
+func (w *writeBuilder) setHardState(ctx context.Context, hs raftpb.HardState) error {
 	if raft.IsEmptyHardState(hs) {
 		return nil
 	}
@@ -448,29 +491,19 @@ func storeHardState(
 	//
 	// We have both in the same batch, so there's no problem. If that ever
 	// changes, we must write and sync the Entries before the HardState.
-	if err := sl.SetHardState(ctx, w, hs); err != nil {
-		return errors.Wrap(err, "during SetHardState")
-	}
-	return nil
+	return w.sl.SetHardState(ctx, w.rw, hs)
 }
 
-// logAppend adds the given entries to the raft log. Takes the previous log
-// state, and returns the updated state. It's the caller's responsibility to
-// maintain exclusive access to the raft log for the duration of the method
-// call.
+// logAppend adds the given entries to the raft log. Updates the RaftState for
+// this builder. It's the caller's responsibility to maintain exclusive access
+// to the raft log for the duration of the method call.
 //
 // logAppend is intentionally oblivious to the existence of sideloaded
 // proposals. They are managed by the caller, including cleaning up obsolete
 // on-disk payloads in case the log tail is replaced.
-func logAppend(
-	ctx context.Context,
-	raftLogPrefix roachpb.Key,
-	rw storage.ReadWriter,
-	prev RaftState,
-	entries []raftpb.Entry,
-) (RaftState, error) {
+func (w *writeBuilder) logAppend(ctx context.Context, entries []raftpb.Entry) error {
 	if len(entries) == 0 {
-		return prev, nil
+		return nil
 	}
 
 	// NB: the Value and MVCCStats lifetime is this function, so we coalesce their
@@ -487,43 +520,45 @@ func logAppend(
 	diff.Reset()
 
 	opts := storage.MVCCWriteOptions{Stats: diff, Category: fs.ReplicationReadCategory}
+	raftLogPrefix := w.sl.RaftLogPrefix()
 	for i := range entries {
 		ent := &entries[i]
 		key := keys.RaftLogKeyFromPrefix(raftLogPrefix, kvpb.RaftIndex(ent.Index))
 
 		if err := value.SetProto(ent); err != nil {
-			return RaftState{}, err
+			return err
 		}
 		value.InitChecksum(key)
 		var err error
-		if kvpb.RaftIndex(ent.Index) > prev.LastIndex {
-			_, err = storage.MVCCBlindPut(ctx, rw, key, hlc.Timestamp{}, *value, opts)
+		if kvpb.RaftIndex(ent.Index) > w.rs.LastIndex {
+			_, err = storage.MVCCBlindPut(ctx, w.rw, key, hlc.Timestamp{}, *value, opts)
 		} else {
-			_, err = storage.MVCCPut(ctx, rw, key, hlc.Timestamp{}, *value, opts)
+			_, err = storage.MVCCPut(ctx, w.rw, key, hlc.Timestamp{}, *value, opts)
 		}
 		if err != nil {
-			return RaftState{}, err
+			return err
 		}
 	}
 
-	newLastIndex := kvpb.RaftIndex(entries[len(entries)-1].Index)
+	newLast := kvpb.RaftIndex(entries[len(entries)-1].Index)
 	// Delete any previously appended log entries which never committed.
-	if prev.LastIndex > 0 {
-		for i := newLastIndex + 1; i <= prev.LastIndex; i++ {
+	if prevLast := w.rs.LastIndex; prevLast > 0 {
+		for i := newLast + 1; i <= prevLast; i++ {
 			// Note that the caller is in charge of deleting any sideloaded payloads
 			// (which they must only do *after* the batch has committed).
-			_, _, err := storage.MVCCDelete(ctx, rw, keys.RaftLogKeyFromPrefix(raftLogPrefix, i),
+			_, _, err := storage.MVCCDelete(ctx, w.rw, keys.RaftLogKeyFromPrefix(raftLogPrefix, i),
 				hlc.Timestamp{}, opts)
 			if err != nil {
-				return RaftState{}, err
+				return err
 			}
 		}
 	}
-	return RaftState{
-		LastIndex: newLastIndex,
+	w.rs = RaftState{
+		LastIndex: newLast,
 		LastTerm:  kvpb.RaftTerm(entries[len(entries)-1].Term),
-		ByteSize:  prev.ByteSize + diff.SysBytes,
-	}, nil
+		ByteSize:  w.rs.ByteSize + diff.SysBytes,
+	}
+	return nil
 }
 
 // Compact prepares a write that removes entries (prev.Index, next.Index] from
