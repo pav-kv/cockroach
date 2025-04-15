@@ -783,16 +783,16 @@ func (s handleRaftReadyStats) SafeFormat(p redact.SafePrinter, _ rune) {
 	dTotal := s.tEnd.Sub(s.tBegin)
 	dAppend := s.append.Prepare
 	dApply := s.tApplicationEnd.Sub(s.tApplicationBegin)
-	dPebble := s.append.PebbleEnd.Sub(s.append.PebbleBegin)
+	dPebble := s.append.Pebble.End.Sub(s.append.Pebble.Begin)
 	dSnap := s.tSnapEnd.Sub(s.tSnapBegin)
 	dUnaccounted := dTotal - dSnap - dAppend - dApply - dPebble
 
 	{
 		p.Printf("raft ready handling: %.2fs [append=%.2fs, apply=%.2fs, ",
 			dTotal.Seconds(), dAppend.Seconds(), dApply.Seconds())
-		if s.append.Sync {
+		if s.append.Pebble.Sync {
 			var sync redact.SafeString
-			if s.append.NonBlocking {
+			if s.append.Pebble.NonBlocking {
 				sync = "non-blocking-sync" // actual sync time not reflected in this case
 			} else {
 				sync = "sync"
@@ -806,7 +806,7 @@ func (s handleRaftReadyStats) SafeFormat(p redact.SafePrinter, _ rune) {
 	p.Printf(", other=%.2fs]", dUnaccounted.Seconds())
 
 	p.Printf(", wrote [")
-	if b := s.append.PebbleBytes; b > 0 {
+	if b := s.append.Pebble.Bytes; b > 0 {
 		p.Printf("append-batch=%s, ", humanizeutil.IBytes(b))
 	}
 	if b, n := s.append.RegularBytes, s.append.RegularEntries; n > 0 || b > 0 {
@@ -840,8 +840,8 @@ func (s handleRaftReadyStats) SafeFormat(p redact.SafePrinter, _ rune) {
 			p.Printf(", snapshot ignored")
 		}
 	}
-	if !(s.append.PebbleCommitStats == storage.BatchCommitStats{}) {
-		p.Printf(" pebble stats: [%s]", s.append.PebbleCommitStats)
+	if !(s.append.Pebble.CommitStats == storage.BatchCommitStats{}) {
+		p.Printf(" pebble stats: [%s]", s.append.Pebble.CommitStats)
 	}
 }
 
