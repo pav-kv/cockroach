@@ -288,7 +288,7 @@ func (s *LogStore) writeBatch(
 	//	entries to be removed, we must sync before doing so. This is an internal
 	//	detail here: we could instead do a non-blocking sync and remove sideloaded
 	//	entries asynchronously. See #136416.
-	wantsSync := m.MustSync() || overwriting
+	wantsSync := app.MustSync() || overwriting
 	willSync := wantsSync && !DisableSyncRaftLog.Get(&s.Settings.SV)
 	// Use the non-blocking log sync path if we are performing a log sync ...
 	nonBlockingSync := willSync &&
