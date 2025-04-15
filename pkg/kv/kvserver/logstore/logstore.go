@@ -107,7 +107,10 @@ type AppendStats struct {
 	Prepare time.Duration
 
 	EntryStats
+	PebbleStats
+}
 
+type PebbleStats struct {
 	PebbleBegin crtime.Mono
 	PebbleEnd   crtime.Mono
 	PebbleBytes int64
