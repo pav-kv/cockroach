@@ -201,8 +201,7 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 	prevLastIndex := state.LastIndex
 	overwriting := false
 	if len(m.Entries) > 0 {
-		firstPurge := kvpb.RaftIndex(m.Entries[0].Index) // first new entry written
-		overwriting = firstPurge <= prevLastIndex
+		overwriting = kvpb.RaftIndex(m.Entries[0].Index) <= prevLastIndex
 		begin := crtime.NowMono()
 		// All of the entries are appended to distinct keys, returning a new
 		// last index.
@@ -307,25 +306,42 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 	stats.Pebble.Sync = wantsSync
 	stats.Pebble.NonBlocking = nonBlockingSync
 
-	if overwriting {
-		// We may have just overwritten parts of the log which contain
-		// sideloaded SSTables from a previous term (and perhaps discarded some
-		// entries that we didn't overwrite). Remove any such leftover on-disk
-		// payloads (we can do that now because we've committed the deletion
-		// just above).
-		firstPurge := kvpb.RaftIndex(m.Entries[0].Index) // first new entry written
-		purgeTerm := kvpb.RaftTerm(m.Entries[0].Term - 1)
-		lastPurge := prevLastIndex // old end of the log, include in deletion
-		purgedSize, err := maybePurgeSideloaded(ctx, s.Sideload, firstPurge, lastPurge, purgeTerm)
+	if delta, err := s.finalizeWrite(ctx, m.Entries, prevLastIndex); err != nil {
+		return RaftState{}, err
+	} else {
+		// Might have gone negative if the node was recently restarted.
+		state.ByteSize = max(state.ByteSize+delta, 0)
+	}
+	return state, nil
+}
+
+// finalizeWrite updates the log state after the storage write is done. Removes
+// obsolete sideloaded entries and updates the entry cache. Returns a non-zero
+// log size delta if any sideloaded entries have been removed.
+func (s *LogStore) finalizeWrite(
+	ctx context.Context, entries []raftpb.Entry, prevLastIndex kvpb.RaftIndex,
+) (sizeDelta int64, _ error) {
+	if len(entries) == 0 {
+		return 0, nil
+	}
+	if first := kvpb.RaftIndex(entries[0].Index); first <= prevLastIndex {
+		// We may have just overwritten parts of the log which contain sideloaded
+		// SSTables from a previous term (and perhaps discarded some entries that we
+		// didn't overwrite). Remove any such leftover on-disk payloads (we can do
+		// that now because we've committed the deletion just above).
+		//
+		// TODO(#136416): this logic is incorrect. There can be obsoleted entries
+		// from lower terms that are still remaining. We should move this clearing
+		// out of the critical path, and fix the related log size tracking bugs and
+		// dangling sideloaded files.
+		// A quick fix is to prepare a list of to-be-removed sideloaded files in
+		// advance. After writing / syncing new entries, remove these files.
+		purgeTerm := kvpb.RaftTerm(entries[0].Term - 1)
+		purgedSize, err := maybePurgeSideloaded(ctx, s.Sideload, first, prevLastIndex, purgeTerm)
 		if err != nil {
-			const expl = "while purging sideloaded storage"
-			return RaftState{}, errors.Wrap(err, expl)
+			return 0, errors.Wrap(err, "while purging sideloaded storage")
 		}
-		state.ByteSize -= purgedSize
-		if state.ByteSize < 0 {
-			// Might have gone negative if node was recently restarted.
-			state.ByteSize = 0
-		}
+		sizeDelta = -purgedSize
 	}
 
 	// Update raft log entry cache. We clear any older, uncommitted log entries
@@ -335,13 +351,17 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 	// non-blocking case, these entries have been written to the pebble engine (so
 	// reads of the engine will see them), but they are not yet be durable. This
 	// means that the entry cache can lead the durable log. This is allowed by
-	// etcd/raft, which maintains its own tracking of entry durability by
-	// splitting its log into an unstable portion for entries that are not known
-	// to be durable and a stable portion for entries that are known to be
-	// durable.
-	s.EntryCache.Add(s.RangeID, m.Entries, true /* truncate */)
-
-	return state, nil
+	// raft, which maintains its own tracking of entry durability by splitting its
+	// log into an unstable portion for entries that are not known to be durable
+	// and a stable portion for entries that are known to be durable.
+	//
+	// TODO(pav-kv): for safety, decompose this update into two steps: before
+	// writing the storage batch, truncate the suffix of the cache if entries are
+	// overwritten; after the write, append new entries to the cache. Currently,
+	// the cache can contain stale entries while storage is already updated, and
+	// the only hope is that nobody tries to read it under Replica.mu only.
+	s.EntryCache.Add(s.RangeID, entries, true /* truncate */)
+	return sizeDelta, nil
 }
 
 // nonBlockingSyncWaiterCallback packages up the callback that is handed to the
