@@ -783,7 +783,7 @@ func (s handleRaftReadyStats) SafeFormat(p redact.SafePrinter, _ rune) {
 	dTotal := s.tEnd.Sub(s.tBegin)
 	dAppend := s.append.Prepare
 	dApply := s.tApplicationEnd.Sub(s.tApplicationBegin)
-	dPebble := s.append.Pebble.End.Sub(s.append.Pebble.Begin)
+	dPebble := s.append.Pebble.WriteDur
 	dSnap := s.tSnapEnd.Sub(s.tSnapBegin)
 	dUnaccounted := dTotal - dSnap - dAppend - dApply - dPebble
 

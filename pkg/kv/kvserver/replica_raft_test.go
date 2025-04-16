@@ -115,9 +115,8 @@ func Test_handleRaftReadyStats_SafeFormat(t *testing.T) {
 				SideloadedBytes:   5 * (1 << 20),
 			},
 			Pebble: logstore.PebbleStats{
-				Begin: ts(3),
-				End:   ts(4),
-				Bytes: 1024 * 5,
+				Bytes:    1024 * 5,
+				WriteDur: ts(4).Sub(ts(3)),
 				CommitStats: storage.BatchCommitStats{
 					BatchCommitStats: pebble.BatchCommitStats{
 						TotalDuration:               100 * time.Millisecond,
