@@ -188,15 +188,6 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 	stats *AppendStats,
 	batch storage.Batch,
 ) (RaftState, error) {
-	// Before returning, Close the batch if we haven't handed ownership of it to a
-	// SyncWaiterLoop. If batch == nil, SyncWaiterLoop is responsible for closing
-	// it once the in-progress disk writes complete.
-	defer func() {
-		if batch != nil {
-			batch.Close()
-		}
-	}()
-
 	prevLastIndex := state.LastIndex
 	overwriting := false
 	if len(m.Entries) > 0 {
@@ -224,6 +215,50 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 		return RaftState{}, err
 	}
 
+	if ps, err := s.writeBatch(ctx, batch, m, overwriting, cb); err != nil {
+		return RaftState{}, err
+	} else {
+		stats.Pebble = ps
+	}
+	batch = nil // the ownership has been transferred to writeBatch
+
+	if delta, err := s.finalizeWrite(ctx, m.Entries, prevLastIndex); err != nil {
+		return RaftState{}, err
+	} else {
+		// Might have gone negative if the node was recently restarted.
+		state.ByteSize = max(state.ByteSize+delta, 0)
+	}
+	return state, nil
+}
+
+// writeBatch persists the prepared batch to the log storage, and makes sure
+// that the passed-in acknowledgement is handed over to the provided callback
+// after sync.
+//
+// Depending on the kv.raft_log.non_blocking_synchronization.enabled cluster
+// setting and a few other internal reasons, the sync may or may not be
+// blocking. If blocking, the call blocks until after storage sync, and the
+// callback is invoked immediately. Otherwise, the batch is delegated to the
+// SyncWaiter, and the callback is invoked asynchronously.
+//
+// Either way, the effects of the write will be immediately visible to readers
+// of the Engine.
+func (s *LogStore) writeBatch(
+	ctx context.Context,
+	batch storage.Batch,
+	app raft.StorageAppend,
+	overwriting bool,
+	cb SyncCallback,
+) (PebbleStats, error) {
+	// Before returning, Close the batch if we haven't handed ownership of it to a
+	// SyncWaiterLoop. If batch == nil, SyncWaiterLoop is responsible for closing
+	// it once the in-progress disk writes complete.
+	defer func() {
+		if batch != nil {
+			batch.Close()
+		}
+	}()
+
 	// Synchronously commit the batch with the Raft log entries and Raft hard
 	// state as we're promising not to lose this data.
 	//
@@ -243,8 +278,8 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 	// outdated. Raft invariants are in the responsibility of the layer above
 	// (Replica), so this comment might need to move.
 	begin := crtime.NowMono()
-	stats.Pebble.Bytes = int64(batch.Len())
-	wantsSync := m.MustSync()
+	stats := PebbleStats{Bytes: int64(batch.Len())}
+	wantsSync := app.MustSync()
 	willSync := wantsSync && !DisableSyncRaftLog.Get(&s.Settings.SV)
 	// Use the non-blocking log sync path if we are performing a log sync ...
 	nonBlockingSync := willSync &&
@@ -266,17 +301,16 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 		// the engine and initiate a synchronous disk write, but don't wait for the
 		// write to complete.
 		if err := batch.CommitNoSyncWait(); err != nil {
-			const expl = "while committing batch without sync wait"
-			return RaftState{}, errors.Wrap(err, expl)
+			return PebbleStats{}, errors.Wrap(err, "while committing batch without sync wait")
 		}
-		stats.Pebble.CommitDur = begin.Elapsed()
+		stats.CommitDur = begin.Elapsed()
 		// Instead, enqueue that waiting on the SyncWaiterLoop, who will signal the
 		// callback when the write completes.
 		waiterCallback := nonBlockingSyncWaiterCallbackPool.Get().(*nonBlockingSyncWaiterCallback)
 		*waiterCallback = nonBlockingSyncWaiterCallback{
 			ctx:            ctx,
 			cb:             cb,
-			onDone:         m.Ack(),
+			onDone:         app.Ack(),
 			batch:          batch,
 			logCommitBegin: begin,
 		}
@@ -285,25 +319,18 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 		batch = nil
 	} else {
 		if err := batch.Commit(willSync); err != nil {
-			const expl = "while committing batch"
-			return RaftState{}, errors.Wrap(err, expl)
+			return PebbleStats{}, errors.Wrap(err, "while committing batch")
 		}
-		stats.Pebble.CommitDur = begin.Elapsed()
-		stats.Pebble.CommitStats = batch.CommitStats()
+		stats.CommitDur = begin.Elapsed()
+		stats.CommitStats = batch.CommitStats()
 		if wantsSync {
-			cb.OnLogSync(ctx, m.Ack(), WriteStats{CommitDur: stats.Pebble.CommitDur})
+			cb.OnLogSync(ctx, app.Ack(), WriteStats{CommitDur: stats.CommitDur})
 		}
 	}
-	stats.Pebble.Sync = wantsSync
-	stats.Pebble.NonBlocking = nonBlockingSync
+	stats.Sync = wantsSync
+	stats.NonBlocking = nonBlockingSync
 
-	if delta, err := s.finalizeWrite(ctx, m.Entries, prevLastIndex); err != nil {
-		return RaftState{}, err
-	} else {
-		// Might have gone negative if the node was recently restarted.
-		state.ByteSize = max(state.ByteSize+delta, 0)
-	}
-	return state, nil
+	return stats, nil
 }
 
 // finalizeWrite updates the log state after the storage write is done. Removes
