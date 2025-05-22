@@ -11,6 +11,7 @@ import (
 	"math"
 
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/util/encoding"
 	"github.com/cockroachdb/cockroach/pkg/util/uuid"
@@ -380,6 +381,13 @@ func RangeVersionKey(rangeID roachpb.RangeID) roachpb.Key {
 // rangeID for all unreplicated data.
 func MakeRangeIDUnreplicatedPrefix(rangeID roachpb.RangeID) roachpb.Key {
 	return makePrefixWithRangeID(LocalRangeIDPrefix, rangeID, localRangeIDUnreplicatedInfix)
+}
+
+// MakeRangeIDLogIDPrefix creates a RangeID/LogID-local key prefix from the
+// given RangeID and LogID.
+func MakeRangeIDLogIDPrefix(rangeID roachpb.RangeID, logID kvserverpb.LogID) roachpb.Key {
+	prefix := makePrefixWithRangeID(LocalRangeIDPrefix, rangeID, localRangeIDLogIDInfix)
+	return encoding.EncodeUint64Ascending(prefix, uint64(logID))
 }
 
 // makeRangeIDUnreplicatedKey creates a range-local unreplicated key based
