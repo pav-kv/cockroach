@@ -286,6 +286,13 @@ func newUninitializedReplicaWithoutRaftGroup(
 	return r
 }
 
+func (r *Replica) setLogIDRaftMuLockedMuLocked(logID kvpb.LogID) {
+	r.raftMu.AssertHeld()
+	r.mu.AssertHeld()
+	r.logID = logID
+	r.logStorage.raftMu.loader = logstore.NewStateLoader(r.RangeID, logID)
+}
+
 // setStartKeyLocked sets r.startKey. Note that this field has special semantics
 // described on its comment. Callers to this method are initializing an
 // uninitialized Replica and hold Replica.mu.

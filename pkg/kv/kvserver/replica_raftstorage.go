@@ -752,6 +752,7 @@ func (r *Replica) applySnapshotRaftMuLocked(
 	// which is no longer true? The comment needs an update, and the decision to
 	// set this flag to false revisited.
 	ls.shMu.sizeTrusted = false
+	r.setLogIDRaftMuLockedMuLocked(0) // FIXME
 
 	// Update the store stats for the data in the snapshot.
 	r.store.metrics.subtractMVCCStats(ctx, r.tenantMetricsRef, *r.shMu.state.Stats)
