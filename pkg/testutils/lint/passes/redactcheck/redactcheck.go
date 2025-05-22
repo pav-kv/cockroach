@@ -90,6 +90,7 @@ func runAnalyzer(pass *analysis.Pass) (interface{}, error) {
 						"LeaseAppliedIndex": {},
 						"RaftIndex":         {},
 						"RaftTerm":          {},
+						"LogID":             {},
 						"PushTxnType":       {},
 					},
 					"github.com/cockroachdb/cockroach/pkg/kv/kvserver/allocator": {
