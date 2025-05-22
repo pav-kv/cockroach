@@ -185,6 +185,11 @@ var _ = [...]interface{}{
 	ReplicatedSharedLocksTransactionLatchingKey, // "rsl-"
 	RangeVersionKey, // "rver"
 
+	// 2*. RangeID/LogID-local keys.
+	RaftHardStateKey,      // "rfth"
+	RaftLogKey,            // "rftl"
+	RaftTruncatedStateKey, // "rftt"
+
 	//   2. Unreplicated range-ID local keys: These contain metadata that
 	//   pertain to just one replica of a range. They are unreplicated and
 	//   unaddressable. The typical example is the Raft log. They all share

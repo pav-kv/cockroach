@@ -101,6 +101,13 @@ var (
 	// localTxnSpanGCThresholdSuffix is DEPRECATED and remains to prevent reuse.
 	localTxnSpanGCThresholdSuffix = []byte("tst-")
 
+	localRangeIDLogIDInfix = []byte("l")
+	// Use the same suffixes as in unreplicated space.
+	// TODO(sep-raft-log): migrate.
+	_ = LocalRaftHardStateSuffix      // "rfth"
+	_ = LocalRaftLogSuffix            // "rftl"
+	_ = LocalRaftTruncatedStateSuffix // "rftt"
+
 	// 2. Unreplicated Range-ID keys
 	//
 	// localRangeIDUnreplicatedInfix is the post-Range ID specifier for all
