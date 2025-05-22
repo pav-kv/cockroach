@@ -54,11 +54,11 @@ func LoadReplicaState(
 		return LoadedReplicaState{}, errors.AssertionFailedf(
 			"r%d: loaded LogID %d does not match %d", desc.RangeID, loaded, logID)
 	}
-	ls := LoadedReplicaState{ReplicaID: replicaID, LogID: id.LogID}
+	ls := LoadedReplicaState{ReplicaID: replicaID, LogID: logID}
 
 	// TODO(pav-kv): donate the buffer from one stateloader to the other when
 	// done, to avoid the second allocation.
-	logSL := logstore.NewStateLoader(desc.RangeID, ls.LogID)
+	logSL := logstore.NewStateLoader(desc.RangeID, logID)
 	if ls.hardState, err = logSL.LoadHardState(ctx, eng); err != nil {
 		return LoadedReplicaState{}, err
 	}
