@@ -382,6 +382,13 @@ func MakeRangeIDUnreplicatedPrefix(rangeID roachpb.RangeID) roachpb.Key {
 	return makePrefixWithRangeID(LocalRangeIDPrefix, rangeID, localRangeIDUnreplicatedInfix)
 }
 
+// MakeRangeIDLogIDPrefix creates a RangeID/LogID-local key prefix from the
+// given RangeID and LogID.
+func MakeRangeIDLogIDPrefix(rangeID roachpb.RangeID, logID kvpb.LogID) roachpb.Key {
+	prefix := makePrefixWithRangeID(LocalRangeIDPrefix, rangeID, localRangeIDLogIDInfix)
+	return encoding.EncodeUint64Ascending(prefix, uint64(logID))
+}
+
 // makeRangeIDUnreplicatedKey creates a range-local unreplicated key based
 // on the range's Range ID, metadata key suffix, and optional detail.
 func makeRangeIDUnreplicatedKey(

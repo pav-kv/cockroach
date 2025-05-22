@@ -19,11 +19,10 @@ type KeyBuf roachpb.Key
 // MakeKeyBuf creates a KeyBuf set to generate raft state keys within the
 // RangeID-local unreplicated keyspace.
 func MakeKeyBuf(rangeID roachpb.RangeID, logID kvpb.LogID) KeyBuf {
-	// TODO(pav-kv): support LogID.
-	if logID != kvpb.TODOLogID {
-		panic("non-zero LogID is not yet supported")
+	if logID == 0 {
+		return KeyBuf(keys.MakeRangeIDUnreplicatedPrefix(rangeID))
 	}
-	return KeyBuf(keys.MakeRangeIDUnreplicatedPrefix(rangeID))
+	return KeyBuf(keys.MakeRangeIDLogIDPrefix(rangeID, logID))
 }
 
 // RaftHardStateKey returns the key for raft HardState.
