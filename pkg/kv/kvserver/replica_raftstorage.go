@@ -122,7 +122,7 @@ func (r *replicaRaftStorage) InitialState() (raftpb.HardState, raftpb.ConfState,
 	r.mu.AssertHeld()
 
 	ctx := r.AnnotateCtx(context.TODO())
-	hs, err := r.raftMu.stateLoader.LoadHardState(ctx, r.store.TODOEngine())
+	hs, err := r.logStorage.raftMu.loader.LoadHardState(ctx, r.store.LogEngine())
 	if err != nil {
 		r.reportRaftStorageError(err)
 		return raftpb.HardState{}, raftpb.ConfState{}, err
@@ -587,6 +587,7 @@ func (r *Replica) applySnapshotRaftMuLocked(
 
 		todoEng:  r.store.TODOEngine(),
 		sl:       r.raftMu.stateLoader,
+		logSL:    r.logStorage.raftMu.loader,
 		writeSST: inSnap.SSTStorageScratch.WriteSST,
 
 		truncState:    truncState,

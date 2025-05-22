@@ -84,20 +84,20 @@ func TestSynthesizeHardState(t *testing.T) {
 		func() {
 			batch := eng.NewBatch()
 			defer batch.Close()
-			rsl := Make(roachpb.RangeID(1))
+			sl := logstore.NewStateLoader(roachpb.RangeID(1))
 
 			if test.OldHS != nil {
-				if err := rsl.SetHardState(context.Background(), batch, *test.OldHS); err != nil {
+				if err := sl.SetHardState(context.Background(), batch, *test.OldHS); err != nil {
 					t.Fatal(err)
 				}
 			}
 
-			oldHS, err := rsl.LoadHardState(context.Background(), batch)
+			oldHS, err := sl.LoadHardState(context.Background(), batch)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			err = rsl.SynthesizeHardState(context.Background(), batch, oldHS,
+			err = sl.SynthesizeHardState(context.Background(), batch, oldHS,
 				logstore.EntryID{Index: test.AppliedIndex, Term: test.AppliedTerm})
 			if !testutils.IsError(err, test.Err) {
 				t.Fatalf("%d: expected %q got %v", i, test.Err, err)
@@ -106,7 +106,7 @@ func TestSynthesizeHardState(t *testing.T) {
 				return
 			}
 
-			hs, err := rsl.LoadHardState(context.Background(), batch)
+			hs, err := sl.LoadHardState(context.Background(), batch)
 			if err != nil {
 				t.Fatal(err)
 			}

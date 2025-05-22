@@ -11,6 +11,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/rditer"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/stateloader"
 	"github.com/cockroachdb/cockroach/pkg/raft/raftpb"
@@ -27,6 +28,7 @@ type snapWriteBuilder struct {
 
 	todoEng  storage.Engine
 	sl       stateloader.StateLoader
+	logSL    logstore.StateLoader
 	writeSST func(context.Context, func(context.Context, storage.Writer) error) error
 
 	truncState    kvserverpb.RaftTruncatedState
@@ -71,7 +73,7 @@ func (s *snapWriteBuilder) rewriteRaftState(ctx context.Context, w storage.Write
 	}
 
 	// Update HardState.
-	if err := s.sl.SetHardState(ctx, w, s.hardState); err != nil {
+	if err := s.logSL.SetHardState(ctx, w, s.hardState); err != nil {
 		return errors.Wrapf(err, "unable to write HardState")
 	}
 	// We've cleared all the raft state above, so we are forced to write the
@@ -80,7 +82,7 @@ func (s *snapWriteBuilder) rewriteRaftState(ctx context.Context, w storage.Write
 		return errors.Wrapf(err, "unable to write RaftReplicaID")
 	}
 	// Update the log truncation state.
-	if err := s.sl.SetRaftTruncatedState(ctx, w, &s.truncState); err != nil {
+	if err := s.logSL.SetRaftTruncatedState(ctx, w, &s.truncState); err != nil {
 		return errors.Wrapf(err, "unable to write RaftTruncatedState")
 	}
 
