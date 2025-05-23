@@ -203,16 +203,17 @@ func (s *Store) tryGetOrCreateReplica(
 	// be accessed by someone holding a reference to, or currently creating a
 	// Replica for this rangeID, and that's us.
 
-	if err := kvstorage.CreateUninitializedReplica(
+	logID, err := kvstorage.CreateUninitializedReplica(
 		// TODO(sep-raft-log): needs both engines due to tombstone (which lives on
 		// statemachine).
 		ctx, s.TODOEngine(), s.StoreID(), rangeID, replicaID,
-	); err != nil {
+	)
+	if err != nil {
 		return nil, false, err
 	}
 
 	// Create a new uninitialized replica and lock it for raft processing.
-	repl, err := newUninitializedReplica(s, rangeID, replicaID)
+	repl, err := newUninitializedReplica(s, rangeID, replicaID, logID)
 	if err != nil {
 		return nil, false, err
 	}

@@ -576,6 +576,12 @@ type Replica struct {
 	//
 	// TODO(pav-kv): audit all other fields and include here.
 	shMu struct {
+		// logID identifies the current incarnation of the raft state in the log
+		// engine. Rotates when this replica is created, and when an initialized
+		// replica applies a snapshot.
+		//
+		// TODO(sep-raft-log): at the moment, logID is always 0. Make it rotate.
+		logID kvserverpb.LogID
 		// The state of the Raft state machine.
 		// Invariant: state.TruncatedState == nil. The field is being phased out in
 		// favour of the one contained in logStorage.
