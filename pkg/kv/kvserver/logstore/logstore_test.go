@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/cockroachdb/cockroach/pkg/keys"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/print"
 	"github.com/cockroachdb/cockroach/pkg/raft/raftpb"
@@ -25,7 +26,7 @@ import (
 func TestRaftStorageWrites(t *testing.T) {
 	ctx := context.Background()
 	const rangeID = roachpb.RangeID(123)
-	sl := NewStateLoader(rangeID)
+	sl := NewStateLoader(rangeID, kvpb.TODOLogID)
 	eng := storage.NewDefaultInMemForTesting()
 	defer eng.Close()
 

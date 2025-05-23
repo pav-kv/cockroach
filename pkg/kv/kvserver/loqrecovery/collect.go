@@ -195,7 +195,7 @@ func visitStoreReplicas(
 		// TODO(pav-kv): the LoQ recovery flow uses only the applied index, and the
 		// HardState.Commit loaded here is unused. Consider removing. Make sure this
 		// doesn't break compatibility for ReplicaInfo unmarshalling.
-		hstate, err := logstore.NewStateLoader(desc.RangeID).LoadHardState(ctx, raft)
+		hstate, err := logstore.NewStateLoader(desc.RangeID, kvpb.TODOLogID).LoadHardState(ctx, raft)
 		if err != nil {
 			return err
 		}

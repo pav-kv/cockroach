@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cockroachdb/cockroach/pkg/keys"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/stateloader"
@@ -404,7 +405,7 @@ func (r Replica) Load(
 		ReplicaID: r.ReplicaID,
 		hardState: r.hardState,
 	}
-	sl := logstore.NewStateLoader(r.Desc.RangeID)
+	sl := logstore.NewStateLoader(r.Desc.RangeID, kvpb.TODOLogID)
 	var err error
 	if ls.TruncState, err = sl.LoadRaftTruncatedState(ctx, eng); err != nil {
 		return LoadedReplicaState{}, err

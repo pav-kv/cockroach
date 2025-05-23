@@ -84,7 +84,7 @@ func TestSynthesizeHardState(t *testing.T) {
 		func() {
 			batch := eng.NewBatch()
 			defer batch.Close()
-			sl := logstore.NewStateLoader(roachpb.RangeID(1))
+			sl := logstore.NewStateLoader(roachpb.RangeID(1), kvpb.TODOLogID)
 
 			if test.OldHS != nil {
 				if err := sl.SetHardState(context.Background(), batch, *test.OldHS); err != nil {

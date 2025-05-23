@@ -113,7 +113,7 @@ func newReplicaLogStorageTest(t *testing.T) *replicaLogStorageTest {
 			RangeID:     rangeID,
 			Engine:      eng,
 			Sideload:    sideloaded,
-			StateLoader: logstore.NewStateLoader(rangeID),
+			StateLoader: logstore.NewStateLoader(rangeID, kvpb.TODOLogID),
 			SyncWaiter:  logstore.NewSyncWaiterLoop(),
 			Settings:    st,
 		},

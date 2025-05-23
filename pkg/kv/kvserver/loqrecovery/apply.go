@@ -13,6 +13,7 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/clusterversion"
 	"github.com/cockroachdb/cockroach/pkg/keys"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/loqrecovery/loqrecoverypb"
@@ -311,7 +312,7 @@ func applyReplicaUpdate(
 
 	// Update the HardState to clear the LeadEpoch, as otherwise we may risk
 	// seeing an epoch regression in raft. See #136908 for more details.
-	logSL := logstore.NewStateLoader(localDesc.RangeID)
+	logSL := logstore.NewStateLoader(localDesc.RangeID, kvpb.TODOLogID)
 	hs, err := logSL.LoadHardState(ctx, readWriter)
 	if err != nil {
 		return PrepareReplicaReport{}, errors.Wrap(err, "loading HardState")

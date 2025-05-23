@@ -8,6 +8,7 @@ package stateloader
 import (
 	"context"
 
+	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
 	"github.com/cockroachdb/cockroach/pkg/raft/raftpb"
@@ -110,11 +111,12 @@ func WriteInitialReplicaState(
 // WriteInitialTruncState writes the initial RaftTruncatedState.
 // TODO(arulajmani): remove this.
 func WriteInitialTruncState(ctx context.Context, w storage.Writer, rangeID roachpb.RangeID) error {
-	return logstore.NewStateLoader(rangeID).SetRaftTruncatedState(ctx, w,
-		&kvserverpb.RaftTruncatedState{
-			Index: RaftInitialLogIndex,
-			Term:  RaftInitialLogTerm,
-		})
+	return logstore.NewStateLoader(
+		rangeID, kvpb.TODOLogID,
+	).SetRaftTruncatedState(ctx, w, &kvserverpb.RaftTruncatedState{
+		Index: RaftInitialLogIndex,
+		Term:  RaftInitialLogTerm,
+	})
 }
 
 // WriteInitialRangeState writes the initial range state. It's called during
@@ -153,7 +155,7 @@ func WriteInitialRangeState(
 func WriteInitialRaftState(
 	ctx context.Context, writer storage.Writer, rangeID roachpb.RangeID,
 ) error {
-	sl := logstore.NewStateLoader(rangeID)
+	sl := logstore.NewStateLoader(rangeID, kvpb.TODOLogID)
 	// Initialize the HardState with the term and commit index matching the
 	// initial applied state of the replica.
 	if err := sl.SetHardState(ctx, writer, raftpb.HardState{
