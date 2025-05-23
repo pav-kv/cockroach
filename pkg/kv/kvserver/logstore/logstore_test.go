@@ -25,7 +25,7 @@ import (
 func TestRaftStorageWrites(t *testing.T) {
 	ctx := context.Background()
 	const rangeID = roachpb.RangeID(123)
-	sl := NewStateLoader(rangeID)
+	sl := NewStateLoader(rangeID, kvserverpb.TODOLogID)
 	eng := storage.NewDefaultInMemForTesting()
 	defer eng.Close()
 

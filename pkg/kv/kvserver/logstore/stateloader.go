@@ -41,9 +41,9 @@ type StateLoader struct {
 	KeyBuf
 }
 
-// NewStateLoader creates a log StateLoader for the given range.
-func NewStateLoader(rangeID roachpb.RangeID) StateLoader {
-	return StateLoader{KeyBuf: MakeKeyBuf(rangeID)}
+// NewStateLoader creates a log StateLoader for the given range and log ID.
+func NewStateLoader(rangeID roachpb.RangeID, logID kvserverpb.LogID) StateLoader {
+	return StateLoader{KeyBuf: MakeKeyBuf(rangeID, logID)}
 }
 
 // EntryID is an (index, term) pair identifying a raft log entry.
