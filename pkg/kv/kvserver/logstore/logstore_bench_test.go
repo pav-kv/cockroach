@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/raftlog"
 	"github.com/cockroachdb/cockroach/pkg/raft"
 	"github.com/cockroachdb/cockroach/pkg/raft/raftpb"
@@ -55,7 +56,7 @@ func runBenchmarkLogStore_StoreEntries(b *testing.B, bytes int64) {
 	s := LogStore{
 		RangeID:     rangeID,
 		Engine:      eng,
-		StateLoader: NewStateLoader(rangeID),
+		StateLoader: NewStateLoader(rangeID, kvpb.TODOLogID),
 		Settings:    st,
 	}
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cockroachdb/cockroach/pkg/keys"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/abortspan"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/allocator/plan"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/closedts/ctpb"
@@ -228,7 +229,7 @@ func newUninitializedReplicaWithoutRaftGroup(
 	}
 	r.logStorage.mu.RWMutex = (*syncutil.RWMutex)(&r.mu.ReplicaMutex)
 	r.logStorage.raftMu.Mutex = &r.raftMu.Mutex
-	r.logStorage.raftMu.loader = logstore.NewStateLoader(rangeID)
+	r.logStorage.raftMu.loader = logstore.NewStateLoader(rangeID, kvpb.TODOLogID)
 	r.logStorage.ls = &logstore.LogStore{
 		RangeID:     rangeID,
 		Engine:      store.LogEngine(),

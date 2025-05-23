@@ -190,7 +190,7 @@ func visitStoreReplicas(
 		if err != nil {
 			return err
 		}
-		hstate, err := logstore.NewStateLoader(desc.RangeID).LoadHardState(ctx, reader)
+		hstate, err := logstore.NewStateLoader(desc.RangeID, kvpb.TODOLogID).LoadHardState(ctx, reader)
 		if err != nil {
 			return err
 		}

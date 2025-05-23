@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 
+	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/load"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
@@ -137,7 +138,7 @@ func splitPreApply(
 	// is the common case.
 	rsl := stateloader.Make(split.RightDesc.RangeID)
 	if err := rsl.SynthesizeRaftState(
-		ctx, logstore.NewStateLoader(split.RightDesc.RangeID), readWriter,
+		ctx, logstore.NewStateLoader(split.RightDesc.RangeID, kvpb.TODOLogID), readWriter,
 	); err != nil {
 		log.Fatalf(ctx, "%v", err)
 	}
