@@ -900,7 +900,7 @@ func TestMarkReplicaInitialized(t *testing.T) {
 	const replicaID = 1
 	require.NoError(t, stateloader.Make(newRangeID).SetRaftReplicaID(ctx, store.TODOEngine(), replicaID))
 
-	r, err := newUninitializedReplica(store, newRangeID, replicaID)
+	r, err := newUninitializedReplica(store, newRangeID, replicaID, kvpb.TODOLogID)
 	require.NoError(t, err)
 
 	store.mu.Lock()
