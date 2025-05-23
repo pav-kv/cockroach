@@ -23,6 +23,7 @@ import (
 // TODO(pavelkalinnikov): integrate with kvstorage.Replica.
 type LoadedReplicaState struct {
 	ReplicaID   roachpb.ReplicaID
+	LogID       kvserverpb.LogID
 	LastEntryID logstore.EntryID
 	ReplState   kvserverpb.ReplicaState
 	TruncState  kvserverpb.RaftTruncatedState
@@ -40,22 +41,24 @@ func LoadReplicaState(
 	storeID roachpb.StoreID,
 	desc *roachpb.RangeDescriptor,
 	replicaID roachpb.ReplicaID,
+	logID kvserverpb.LogID,
 ) (LoadedReplicaState, error) {
 	sl := stateloader.Make(desc.RangeID)
 	id, err := sl.LoadRaftReplicaID(ctx, eng)
 	if err != nil {
 		return LoadedReplicaState{}, err
-	}
-	if loaded := id.ReplicaID; loaded != replicaID {
+	} else if loaded := id.ReplicaID; loaded != replicaID {
 		return LoadedReplicaState{}, errors.AssertionFailedf(
-			"r%d: loaded RaftReplicaID %d does not match %d", desc.RangeID, loaded, replicaID)
+			"r%d: loaded ReplicaID %d does not match %d", desc.RangeID, loaded, replicaID)
+	} else if loaded := id.LogID; loaded != logID {
+		return LoadedReplicaState{}, errors.AssertionFailedf(
+			"r%d: loaded LogID %d does not match %d", desc.RangeID, loaded, logID)
 	}
+	ls := LoadedReplicaState{ReplicaID: replicaID, LogID: logID}
 
 	// TODO(pav-kv): donate the buffer from one stateloader to the other when
 	// done, to avoid the second allocation.
-	logSL := logstore.NewStateLoader(desc.RangeID, kvserverpb.TODOLogID)
-
-	ls := LoadedReplicaState{ReplicaID: replicaID}
+	logSL := logstore.NewStateLoader(desc.RangeID, logID)
 	if ls.hardState, err = logSL.LoadHardState(ctx, eng); err != nil {
 		return LoadedReplicaState{}, err
 	}
@@ -108,24 +111,31 @@ func (r LoadedReplicaState) check(storeID roachpb.StoreID) error {
 // CreateUninitializedReplica creates an uninitialized replica in storage.
 // Returns kvpb.RaftGroupDeletedError if this replica can not be created
 // because it has been deleted.
+//
+// Returns the new LogID under which the raft state will be stored.
 func CreateUninitializedReplica(
 	ctx context.Context,
 	eng storage.Engine,
 	storeID roachpb.StoreID,
 	rangeID roachpb.RangeID,
 	replicaID roachpb.ReplicaID,
-) error {
+) (kvserverpb.LogID, error) {
+	logID := kvserverpb.TODOLogID
 	sl := stateloader.Make(rangeID)
 	// Before creating the replica, see if there is a tombstone which would
 	// indicate that this replica has been removed.
 	// TODO(pav-kv): should also check that there is no existing replica, i.e.
 	// ReplicaID load should find nothing.
 	if ts, err := sl.LoadRangeTombstone(ctx, eng); err != nil {
-		return err
+		return 0, err
 	} else if replicaID < ts.NextReplicaID {
-		return &kvpb.RaftGroupDeletedError{}
+		return 0, &kvpb.RaftGroupDeletedError{}
+	} else {
+		// TODO(sep-raft-log): move the LogID forward and store it with the
+		// replicaID. The quirk in the comment below will no longer exist when LogID
+		// starts rotating, because the HardState will not be reused.
+		_ = ts.NextLogID
 	}
-
 	// Write the RaftReplicaID for this replica. This is the only place in the
 	// CockroachDB code that we are creating a new *uninitialized* replica.
 	// Note that it is possible that we have already created the HardState for
@@ -139,11 +149,13 @@ func CreateUninitializedReplica(
 	//   this newer replica is harmless since it just limits the votes for
 	//   this replica.
 	if err := sl.SetRaftReplicaID(ctx, eng, replicaID); err != nil {
-		return err
+		return 0, err
 	}
 
 	// Make sure that storage invariants for this uninitialized replica hold.
 	uninitDesc := roachpb.RangeDescriptor{RangeID: rangeID}
-	_, err := LoadReplicaState(ctx, eng, storeID, &uninitDesc, replicaID)
-	return err
+	if _, err := LoadReplicaState(ctx, eng, storeID, &uninitDesc, replicaID, logID); err != nil {
+		return 0, err
+	}
+	return logID, nil
 }

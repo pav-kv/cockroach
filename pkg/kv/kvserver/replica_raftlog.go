@@ -56,6 +56,12 @@ type replicaLogStorage struct {
 	// are held for writes. They can be accessed when either of the two mutexes is
 	// held.
 	shMu struct {
+		// logID identifies the current incarnation of the raft state in the log
+		// engine. Rotates when this replica is created, and when an initialized
+		// replica applies a snapshot.
+		//
+		// TODO(sep-raft-log): at the moment, logID is always 0. Make it rotate.
+		logID kvserverpb.LogID
 		// trunc contains the raft log truncation state, i.e. the ID of the last
 		// entry of the log prefix that has been compacted out from the raft log
 		// storage.
