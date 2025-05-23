@@ -110,7 +110,7 @@ func WriteInitialReplicaState(
 	// the Raft log engine is separated. First will be the log engine write, with
 	// a WAG node containing all the above state machine writes.
 	// TODO(pav-kv): donate the other state loader's buffer to this one.
-	if err := logstore.NewStateLoader(desc.RangeID).SetRaftTruncatedState(
+	if err := logstore.NewStateLoader(desc.RangeID, kvserverpb.TODOLogID).SetRaftTruncatedState(
 		ctx, readWriter, truncState,
 	); err != nil {
 		return enginepb.MVCCStats{}, err
@@ -145,7 +145,7 @@ func WriteInitialRangeState(
 	// the WAG node and the state engine mutations; then will go the state engine
 	// mutation.
 	sl := Make(desc.RangeID)
-	logSL := logstore.NewStateLoader(desc.RangeID)
+	logSL := logstore.NewStateLoader(desc.RangeID, kvserverpb.TODOLogID)
 	if err := SynthesizeRaftState(ctx, logSL, sl, readWriter); err != nil {
 		return err
 	}

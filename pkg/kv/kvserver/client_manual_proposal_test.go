@@ -113,7 +113,7 @@ LIMIT
 	it, err := raftlog.NewIterator(ctx, rangeID, eng, raftlog.IterOptions{})
 	require.NoError(t, err)
 	defer it.Close()
-	rsl := logstore.NewStateLoader(rangeID)
+	rsl := logstore.NewStateLoader(rangeID, kvserverpb.TODOLogID)
 	ts, err := rsl.LoadRaftTruncatedState(ctx, eng)
 	require.NoError(t, err)
 	lastEntryID, err := rsl.LoadLastEntryID(ctx, eng, ts)

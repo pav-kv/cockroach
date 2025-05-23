@@ -12,6 +12,12 @@ import (
 	"github.com/cockroachdb/errors"
 )
 
+// TODOLogID is the zero LogID which identifies the old way of storing raft
+// state under RangeID-local keys. The new way will place it under LogID-aware
+// keys.
+// TODO(sep-raft-log): make all users of this const aware of the new schema.
+const TODOLogID = LogID(0)
+
 // LogID is a unique ID for a RangeID's raft state in local Store.
 type LogID uint64
 

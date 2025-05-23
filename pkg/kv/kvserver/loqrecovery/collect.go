@@ -15,6 +15,7 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/clusterversion"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/loqrecovery/loqrecoverypb"
@@ -190,7 +191,7 @@ func visitStoreReplicas(
 		if err != nil {
 			return err
 		}
-		hstate, err := logstore.NewStateLoader(desc.RangeID).LoadHardState(ctx, reader)
+		hstate, err := logstore.NewStateLoader(desc.RangeID, kvserverpb.TODOLogID).LoadHardState(ctx, reader)
 		if err != nil {
 			return err
 		}
