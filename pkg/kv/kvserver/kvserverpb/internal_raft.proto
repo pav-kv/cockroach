@@ -24,15 +24,32 @@ message RaftTruncatedState {
 
 // RangeTombstone contains information about a replica that has been deleted.
 message RangeTombstone {
-  optional int32 next_replica_id = 1 [(gogoproto.nullable) = false,
-      (gogoproto.customname) = "NextReplicaID", (gogoproto.casttype) = "github.com/cockroachdb/cockroach/pkg/roachpb.ReplicaID"];
+  // NextReplicaID is the minimal ReplicaID of the RangeID that can be created
+  // on this Store. All incarnations of the RangeID under lower ReplicaID have
+  // been destroyed.
+  optional int32 next_replica_id = 1 [
+    (gogoproto.nullable) = false, (gogoproto.customname) = "NextReplicaID",
+    (gogoproto.casttype) = "github.com/cockroachdb/cockroach/pkg/roachpb.ReplicaID"];
+  // NextLogID is the minimal raft state LogID of the RangeID that can be
+  // created on this Store. All lower LogIDs have been applied to the state
+  // machine and marked as destroyed.
+  optional int32 next_log_id = 2 [
+    (gogoproto.nullable) = false, (gogoproto.customname) = "NextLogID",
+    (gogoproto.casttype) = "LogID"];
 }
 
+// RaftReplicaID contains the mapping of a state machine replica onto its
+// corresponding raft state in the log engine.
 message RaftReplicaID {
   option (gogoproto.equal) = true;
   option (gogoproto.populate) = true;
 
   // ReplicaID is the ID of the replica with the corresponding HardState.
-  optional int32 replica_id = 1 [(gogoproto.nullable) = false,
-    (gogoproto.customname) = "ReplicaID", (gogoproto.casttype) = "github.com/cockroachdb/cockroach/pkg/roachpb.ReplicaID"];
+  optional int32 replica_id = 1 [
+    (gogoproto.nullable) = false, (gogoproto.customname) = "ReplicaID",
+    (gogoproto.casttype) = "github.com/cockroachdb/cockroach/pkg/roachpb.ReplicaID"];
+  // LogID is the raft state LogID.
+  optional uint64 log_id = 2 [
+    (gogoproto.nullable) = false, (gogoproto.customname) = "LogID",
+    (gogoproto.casttype) = "LogID"];
 }
