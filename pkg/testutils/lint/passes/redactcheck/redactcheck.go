@@ -120,6 +120,7 @@ func runAnalyzer(pass *analysis.Pass) (interface{}, error) {
 						"WaitPolicy": {},
 					},
 					"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb": {
+						"LogID":                {},
 						"SnapshotRequest_Type": {},
 					},
 					"github.com/cockroachdb/cockroach/pkg/kv/kvserver/liveness/livenesspb": {
