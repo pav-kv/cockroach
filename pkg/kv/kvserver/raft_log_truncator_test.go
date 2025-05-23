@@ -125,7 +125,7 @@ func makeReplicaTT(rangeID roachpb.RangeID, buf *strings.Builder) *replicaTrunca
 		rangeID:     rangeID,
 		buf:         buf,
 		stateLoader: stateloader.Make(rangeID),
-		logLoader:   logstore.NewStateLoader(rangeID),
+		logLoader:   logstore.NewStateLoader(rangeID, kvserverpb.TODOLogID),
 	}
 }
 

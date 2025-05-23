@@ -38,7 +38,7 @@ func TestHandleTruncatedStateBelowRaft(t *testing.T) {
 	ctx := context.Background()
 	datadriven.Walk(t, datapathutils.TestDataPath(t, "truncated_state"), func(t *testing.T, path string) {
 		const rangeID = 12
-		loader := logstore.NewStateLoader(rangeID)
+		loader := logstore.NewStateLoader(rangeID, kvserverpb.TODOLogID)
 		eng := storage.NewDefaultInMemForTesting()
 		defer eng.Close()
 

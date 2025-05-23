@@ -404,7 +404,7 @@ func (r Replica) Load(
 		ReplicaID: r.ReplicaID,
 		hardState: r.hardState,
 	}
-	sl := logstore.NewStateLoader(r.Desc.RangeID)
+	sl := logstore.NewStateLoader(r.Desc.RangeID, kvserverpb.TODOLogID)
 	var err error
 	if ls.TruncState, err = sl.LoadRaftTruncatedState(ctx, eng); err != nil {
 		return LoadedReplicaState{}, err

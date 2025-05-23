@@ -53,7 +53,7 @@ func LoadReplicaState(
 
 	// TODO(pav-kv): donate the buffer from one stateloader to the other when
 	// done, to avoid the second allocation.
-	logSL := logstore.NewStateLoader(desc.RangeID)
+	logSL := logstore.NewStateLoader(desc.RangeID, kvserverpb.TODOLogID)
 
 	ls := LoadedReplicaState{ReplicaID: replicaID}
 	if ls.hardState, err = logSL.LoadHardState(ctx, eng); err != nil {

@@ -8,6 +8,7 @@ package logstore
 import (
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 )
 
@@ -18,8 +19,11 @@ type KeyBuf roachpb.Key
 
 // MakeKeyBuf creates a KeyBuf set to generate raft state keys within the
 // RangeID-local unreplicated keyspace.
-// TODO(pav-kv): support LogID.
-func MakeKeyBuf(rangeID roachpb.RangeID) KeyBuf {
+func MakeKeyBuf(rangeID roachpb.RangeID, logID kvserverpb.LogID) KeyBuf {
+	// TODO(pav-kv): support LogID.
+	if logID != kvserverpb.TODOLogID {
+		panic("non-zero LogID is not yet supported")
+	}
 	return KeyBuf(keys.MakeRangeIDUnreplicatedPrefix(rangeID))
 }
 
