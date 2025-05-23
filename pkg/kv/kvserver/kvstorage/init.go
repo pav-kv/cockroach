@@ -384,6 +384,7 @@ func IterateRangeDescriptorsFromDisk(
 type Replica struct {
 	RangeID   roachpb.RangeID
 	ReplicaID roachpb.ReplicaID
+	LogID     kvpb.LogID
 	Desc      *roachpb.RangeDescriptor // nil for uninitialized Replica
 
 	hardState raftpb.HardState // internal to kvstorage, see migration in LoadAndReconcileReplicas
@@ -403,9 +404,10 @@ func (r Replica) Load(
 ) (LoadedReplicaState, error) {
 	ls := LoadedReplicaState{
 		ReplicaID: r.ReplicaID,
+		LogID:     r.LogID,
 		hardState: r.hardState,
 	}
-	sl := logstore.NewStateLoader(r.Desc.RangeID, kvpb.TODOLogID)
+	sl := logstore.NewStateLoader(r.Desc.RangeID, r.LogID)
 	var err error
 	if ls.TruncState, err = sl.LoadRaftTruncatedState(ctx, eng); err != nil {
 		return LoadedReplicaState{}, err
@@ -434,9 +436,10 @@ func (m replicaMap) getOrMake(rangeID roachpb.RangeID) Replica {
 	return ent
 }
 
-func (m replicaMap) setReplicaID(rangeID roachpb.RangeID, replicaID roachpb.ReplicaID) {
+func (m replicaMap) setReplicaID(rangeID roachpb.RangeID, id kvserverpb.RaftReplicaID) {
 	ent := m.getOrMake(rangeID)
-	ent.ReplicaID = replicaID
+	ent.ReplicaID = id.ReplicaID
+	ent.LogID = id.LogID
 	m[rangeID] = ent
 }
 
@@ -497,7 +500,7 @@ func loadReplicas(ctx context.Context, eng storage.Engine) ([]Replica, error) {
 				log.Infof(ctx, "loaded replica ID for %d/%d replicas", i, len(s))
 			}
 			i++
-			s.setReplicaID(rangeID, msg.ReplicaID)
+			s.setReplicaID(rangeID, msg)
 			return nil
 		}); err != nil {
 			return nil, err

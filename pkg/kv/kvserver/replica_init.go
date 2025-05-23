@@ -66,7 +66,8 @@ func loadInitializedReplicaForTesting(
 	if !desc.IsInitialized() {
 		return nil, errors.AssertionFailedf("can not load with uninitialized descriptor: %s", desc)
 	}
-	state, err := kvstorage.LoadReplicaState(ctx, store.TODOEngine(), store.StoreID(), desc, replicaID)
+	state, err := kvstorage.LoadReplicaState(ctx, store.TODOEngine(), store.StoreID(),
+		desc, replicaID, kvpb.TODOLogID)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +81,8 @@ func loadInitializedReplicaForTesting(
 func newInitializedReplica(
 	store *Store, loaded kvstorage.LoadedReplicaState, waitForPrevLeaseToExpire bool,
 ) (*Replica, error) {
-	r := newUninitializedReplicaWithoutRaftGroup(store, loaded.ReplState.Desc.RangeID, loaded.ReplicaID)
+	r := newUninitializedReplicaWithoutRaftGroup(store,
+		loaded.ReplState.Desc.RangeID, loaded.ReplicaID, loaded.LogID)
 	r.raftMu.Lock()
 	defer r.raftMu.Unlock()
 	r.mu.Lock()
@@ -101,9 +103,9 @@ func newInitializedReplica(
 // TODO(#94912): we actually have another initialization path which should be
 // refactored: Replica.initFromSnapshotLockedRaftMuLocked().
 func newUninitializedReplica(
-	store *Store, rangeID roachpb.RangeID, replicaID roachpb.ReplicaID,
+	store *Store, rangeID roachpb.RangeID, replicaID roachpb.ReplicaID, logID kvpb.LogID,
 ) (*Replica, error) {
-	r := newUninitializedReplicaWithoutRaftGroup(store, rangeID, replicaID)
+	r := newUninitializedReplicaWithoutRaftGroup(store, rangeID, replicaID, logID)
 	r.raftMu.Lock()
 	defer r.raftMu.Unlock()
 	r.mu.Lock()
@@ -120,7 +122,7 @@ func newUninitializedReplica(
 // newInitializedReplica() to avoid creating the Raft group twice (once when
 // creating the uninitialized replica, and once when initializing it).
 func newUninitializedReplicaWithoutRaftGroup(
-	store *Store, rangeID roachpb.RangeID, replicaID roachpb.ReplicaID,
+	store *Store, rangeID roachpb.RangeID, replicaID roachpb.ReplicaID, logID kvpb.LogID,
 ) *Replica {
 	uninitState := stateloader.UninitializedReplicaState(rangeID)
 	r := &Replica{
@@ -227,9 +229,10 @@ func newUninitializedReplicaWithoutRaftGroup(
 		onSync:             (*replicaSyncCallback)(r),
 		metrics:            store.metrics,
 	}
+	r.logStorage.shMu.logID = logID
 	r.logStorage.mu.RWMutex = (*syncutil.RWMutex)(&r.mu.ReplicaMutex)
 	r.logStorage.raftMu.Mutex = &r.raftMu.Mutex
-	r.logStorage.raftMu.loader = logstore.NewStateLoader(rangeID, kvpb.TODOLogID)
+	r.logStorage.raftMu.loader = logstore.NewStateLoader(rangeID, logID)
 	r.logStorage.ls = &logstore.LogStore{
 		RangeID:     rangeID,
 		Engine:      store.LogEngine(),
