@@ -140,7 +140,9 @@ func WriteInitialRangeState(
 	}
 	// Maintain the invariant that any replica (uninitialized or initialized),
 	// with persistent state, has a RaftReplicaID.
-	if err := Make(desc.RangeID).SetRaftReplicaID(ctx, readWriter, replicaID); err != nil {
+	if err := Make(desc.RangeID).SetRaftReplicaID(ctx, readWriter, kvserverpb.RaftReplicaID{
+		ReplicaID: replicaID, LogID: kvserverpb.TODOLogID,
+	}); err != nil {
 		return err
 	}
 
