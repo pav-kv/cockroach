@@ -135,7 +135,7 @@ func rewriteRaftState(
 	// We've cleared all the raft state above, so we are forced to write the
 	// RaftReplicaID again here.
 	if err := sl.SetRaftReplicaID(ctx, w, kvserverpb.RaftReplicaID{
-		ReplicaID: id.ReplicaID, LogID: kvserverpb.TODOLogID,
+		ReplicaID: id.ReplicaID, LogID: kvserverpb.TODOLogIDRotate,
 	}); err != nil {
 		return roachpb.Span{}, errors.Wrapf(err, "unable to write RaftReplicaID")
 	}
