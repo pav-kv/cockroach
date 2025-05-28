@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/cockroachdb/cockroach/pkg/keys"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
@@ -136,7 +137,9 @@ func rewriteRaftState(
 	}
 	// We've cleared all the raft state above, so we are forced to write the
 	// RaftReplicaID again here.
-	if err := sl.SetRaftReplicaID(ctx, w, id.ReplicaID); err != nil {
+	if err := sl.SetRaftReplicaID(ctx, w, kvserverpb.RaftReplicaID{
+		ReplicaID: id.ReplicaID, LogID: kvpb.TODOLogID,
+	}); err != nil {
 		return roachpb.Span{}, errors.Wrapf(err, "unable to write RaftReplicaID")
 	}
 	// Update the log truncation state.
