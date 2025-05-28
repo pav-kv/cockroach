@@ -211,3 +211,8 @@ func (id LogID) SafeValue() {}
 // keys.
 // TODO(sep-raft-log): make all users of this const aware of the new schema.
 const TODOLogID = LogID(0)
+
+// TODOLogIDRotate is a placeholder for the code which should increment LogID
+// and place the raft state under the new LogID. This is done when creating an
+// uninitialized replica, or when an initialized replica applies a snapshot.
+const TODOLogIDRotate = LogID(0)

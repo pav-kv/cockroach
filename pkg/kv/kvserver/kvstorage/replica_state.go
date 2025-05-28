@@ -131,7 +131,7 @@ func CreateUninitializedReplica(
 	rangeID roachpb.RangeID,
 	replicaID roachpb.ReplicaID,
 ) (kvpb.LogID, error) {
-	logID := kvpb.TODOLogID
+	logID := kvpb.TODOLogIDRotate
 	sl := stateloader.Make(rangeID)
 	// Before creating the replica, see if there is a tombstone which would
 	// indicate that this replica has been removed.

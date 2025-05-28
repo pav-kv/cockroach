@@ -80,7 +80,7 @@ func (s *snapWriteBuilder) rewriteRaftState(ctx context.Context, w storage.Write
 	// We've cleared all the raft state above, so we are forced to write the
 	// RaftReplicaID again here.
 	if err := s.sl.SetRaftReplicaID(ctx, w, kvserverpb.RaftReplicaID{
-		ReplicaID: s.id.ReplicaID, LogID: kvpb.TODOLogID,
+		ReplicaID: s.id.ReplicaID, LogID: kvpb.TODOLogIDRotate,
 	}); err != nil {
 		return errors.Wrapf(err, "unable to write RaftReplicaID")
 	}
