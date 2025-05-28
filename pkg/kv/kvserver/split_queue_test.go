@@ -14,6 +14,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/config/zonepb"
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/stateloader"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/enginepb"
@@ -93,8 +94,10 @@ func TestSplitQueueShouldQueue(t *testing.T) {
 		cpy.StartKey = test.start
 		cpy.EndKey = test.end
 		replicaID := cpy.Replicas().VoterDescriptors()[0].ReplicaID
-		require.NoError(t,
-			stateloader.Make(cpy.RangeID).SetRaftReplicaID(ctx, tc.store.TODOEngine(), replicaID))
+		require.NoError(t, stateloader.Make(cpy.RangeID).SetRaftReplicaID(
+			ctx, tc.store.StateEngine(), kvserverpb.RaftReplicaID{
+				ReplicaID: replicaID, LogID: kvserverpb.TODOLogID,
+			}))
 		repl, err := loadInitializedReplicaForTesting(ctx, tc.store, &cpy, replicaID)
 		if err != nil {
 			t.Fatal(err)

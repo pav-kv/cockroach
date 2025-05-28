@@ -301,7 +301,9 @@ func applyReplicaUpdate(
 		update.NewReplica.NodeID, update.NewReplica.StoreID)
 
 	// Persist the new replica ID.
-	if err := sl.SetRaftReplicaID(ctx, readWriter, update.NewReplica.ReplicaID); err != nil {
+	if err := sl.SetRaftReplicaID(ctx, readWriter, kvserverpb.RaftReplicaID{
+		ReplicaID: update.NewReplica.ReplicaID, LogID: kvserverpb.TODOLogID,
+	}); err != nil {
 		return PrepareReplicaReport{}, errors.Wrap(err, "setting new replica ID")
 	}
 

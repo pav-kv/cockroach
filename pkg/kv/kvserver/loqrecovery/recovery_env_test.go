@@ -338,7 +338,9 @@ func (e *quorumRecoveryEnv) handleReplicationData(t *testing.T, d datadriven.Tes
 		if err := sl.SetHardState(ctx, eng, hardState); err != nil {
 			t.Fatalf("failed to save raft hard state: %v", err)
 		}
-		if err := sl.SetRaftReplicaID(ctx, eng, replicaID); err != nil {
+		if err := sl.SetRaftReplicaID(ctx, eng, kvserverpb.RaftReplicaID{
+			ReplicaID: replicaID, LogID: kvserverpb.TODOLogID,
+		}); err != nil {
 			t.Fatalf("failed to set raft replica ID: %v", err)
 		}
 		for i, entry := range raftLog {
