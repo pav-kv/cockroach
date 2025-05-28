@@ -14,6 +14,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/clusterversion"
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/loqrecovery/loqrecoverypb"
@@ -301,7 +302,9 @@ func applyReplicaUpdate(
 		update.NewReplica.NodeID, update.NewReplica.StoreID)
 
 	// Persist the new replica ID.
-	if err := sl.SetRaftReplicaID(ctx, readWriter, update.NewReplica.ReplicaID); err != nil {
+	if err := sl.SetRaftReplicaID(ctx, readWriter, kvserverpb.RaftReplicaID{
+		ReplicaID: update.NewReplica.ReplicaID, LogID: kvpb.TODOLogID,
+	}); err != nil {
 		return PrepareReplicaReport{}, errors.Wrap(err, "setting new replica ID")
 	}
 

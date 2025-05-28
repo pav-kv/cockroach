@@ -386,16 +386,15 @@ func (rsl StateLoader) LoadRaftReplicaID(
 
 // SetRaftReplicaID overwrites the RaftReplicaID.
 func (rsl StateLoader) SetRaftReplicaID(
-	ctx context.Context, writer storage.Writer, replicaID roachpb.ReplicaID,
+	ctx context.Context, writer storage.Writer, id kvserverpb.RaftReplicaID,
 ) error {
-	rid := kvserverpb.RaftReplicaID{ReplicaID: replicaID}
 	// "Blind" because opts.Stats == nil and timestamp.IsEmpty().
 	return storage.MVCCBlindPutProto(
 		ctx,
 		writer,
 		rsl.b.RaftReplicaIDKey(),
 		hlc.Timestamp{}, /* timestamp */
-		&rid,
+		&id,
 		storage.MVCCWriteOptions{}, /* opts */
 	)
 }

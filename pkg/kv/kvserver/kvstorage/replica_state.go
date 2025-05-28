@@ -160,7 +160,9 @@ func CreateUninitializedReplica(
 	//   this newer replica is harmless since it just limits the votes for
 	//   this replica.
 	_ = CreateUninitReplicaTODO
-	if err := sl.SetRaftReplicaID(ctx, eng, replicaID); err != nil {
+	if err := sl.SetRaftReplicaID(ctx, eng, kvserverpb.RaftReplicaID{
+		ReplicaID: replicaID, LogID: logID,
+	}); err != nil {
 		return 0, err
 	}
 

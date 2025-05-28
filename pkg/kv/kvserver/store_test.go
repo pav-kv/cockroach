@@ -898,7 +898,10 @@ func TestMarkReplicaInitialized(t *testing.T) {
 
 	newRangeID := roachpb.RangeID(3)
 	const replicaID = 1
-	require.NoError(t, stateloader.Make(newRangeID).SetRaftReplicaID(ctx, store.TODOEngine(), replicaID))
+	require.NoError(t, stateloader.Make(newRangeID).SetRaftReplicaID(
+		ctx, store.StateEngine(), kvserverpb.RaftReplicaID{
+			ReplicaID: replicaID, LogID: kvpb.TODOLogID,
+		}))
 
 	r, err := newUninitializedReplica(store, newRangeID, replicaID, kvpb.TODOLogID)
 	require.NoError(t, err)
