@@ -12,16 +12,20 @@ import (
 	"github.com/cockroachdb/errors"
 )
 
-// TODOLogID is the zero LogID which identifies the old way of storing raft
-// state under RangeID-local keys. The new way will place it under LogID-aware
-// keys.
-// TODO(sep-raft-log): make all users of this const aware of the new schema.
-const TODOLogID = LogID(0)
-
-// TODOLogIDRotate is a placeholder for the code which should increment LogID
-// and place the raft state under the new LogID. This is done when creating an
-// uninitialized replica, or when an initialized replica applies a snapshot.
-const TODOLogIDRotate = LogID(0)
+const (
+	// TODOLogID is the zero LogID which identifies the old way of storing raft
+	// state under RangeID-local keys. The new way will place it under LogID-aware
+	// keys.
+	// TODO(sep-raft-log): make all users of this const aware of the new schema.
+	TODOLogID = LogID(0)
+	// TODOLogIDRotate is a placeholder for the code which should increment LogID
+	// and place the raft state under the new LogID. This is done when creating an
+	// uninitialized replica, or when an initialized replica applies a snapshot.
+	TODOLogIDRotate = LogID(0)
+	// TODOLogIDAny is a placeholder for the code which can use any LogID. Used
+	// only in tests. When LogID migration is done, set these to 1.
+	TODOLogIDAny = LogID(0)
+)
 
 // LogID is a unique ID for a RangeID's raft state in local Store.
 type LogID uint64
