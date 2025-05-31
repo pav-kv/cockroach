@@ -23,7 +23,7 @@ func MakeKeyBuf(rangeID roachpb.RangeID, logID kvserverpb.LogID) KeyBuf {
 	if logID == 0 {
 		return KeyBuf(keys.MakeRangeIDUnreplicatedPrefix(rangeID))
 	}
-	return KeyBuf(keys.MakeRangeIDLogIDPrefix(rangeID, logID))
+	return KeyBuf(keys.MakeRangeIDLogIDPrefix(rangeID, uint64(logID)))
 }
 
 // RaftHardStateKey returns the key for raft HardState.
