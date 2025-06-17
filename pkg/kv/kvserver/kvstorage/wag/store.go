@@ -21,7 +21,7 @@ type Writer struct {
 }
 
 func (w *Writer) Next(count uint64) uint64 {
-	return w.index.Add(count)
+	return w.index.Add(count) - count
 }
 
 func Write(w storage.Writer, index uint64, node wagpb.Node) error {

@@ -899,7 +899,7 @@ func TestMarkReplicaInitialized(t *testing.T) {
 	newRangeID := roachpb.RangeID(3)
 	const replicaID = 1
 	logID, err := kvstorage.CreateUninitializedReplica(
-		ctx, store.TODOEngine(), store.StoreID(), newRangeID, replicaID,
+		ctx, store.TODOEngine(), &store.wagWriter, store.StoreID(), newRangeID, replicaID,
 	)
 	require.NoError(t, err)
 	r, err := newUninitializedReplica(store, newRangeID, replicaID, logID)

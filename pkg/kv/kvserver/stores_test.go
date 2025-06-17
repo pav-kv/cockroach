@@ -155,7 +155,7 @@ func TestStoresGetReplicaForRangeID(t *testing.T) {
 		}
 
 		_, err := kvstorage.CreateUninitializedReplica(
-			ctx, store.TODOEngine(), store.StoreID(), desc.RangeID, replicaID)
+			ctx, store.TODOEngine(), &store.wagWriter, store.StoreID(), desc.RangeID, replicaID)
 		require.NoError(t, err)
 		replica, err := loadInitializedReplicaForTesting(ctx, store, desc, replicaID)
 		if err != nil {

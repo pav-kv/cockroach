@@ -207,7 +207,7 @@ func (s *Store) tryGetOrCreateReplica(
 	logID, err := kvstorage.CreateUninitializedReplica(
 		// TODO(sep-raft-log): needs both engines due to tombstone (which lives on
 		// statemachine).
-		ctx, s.TODOEngine(), s.StoreID(), rangeID, replicaID,
+		ctx, s.TODOEngine(), &s.wagWriter, s.StoreID(), rangeID, replicaID,
 	)
 	if err != nil {
 		return nil, false, err

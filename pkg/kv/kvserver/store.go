@@ -46,6 +46,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/snaprecv"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/wag"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/liveness"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/multiqueue"
@@ -895,6 +896,7 @@ type Store struct {
 	replicateQueue       *replicateQueue    // Replication queue
 	replicaGCQueue       *replicaGCQueue    // Replica GC queue
 	raftLogQueue         *raftLogQueue      // Raft log truncation queue
+	wagWriter            wag.Writer
 	// Carries out truncations proposed by the raft log queue, and "replicated"
 	// via raft, when they are safe. Created in Store.Start.
 	raftTruncator       *raftLogTruncator
