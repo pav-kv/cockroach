@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "wag",
     srcs = [
+        "compat.go",
         "store.go",
         "wag.go",
     ],
@@ -11,9 +12,11 @@ go_library(
     deps = [
         "//pkg/keys",
         "//pkg/kv/kvpb",
+        "//pkg/kv/kvserver/kvserverpb",
         "//pkg/kv/kvserver/kvstorage/wag/wagpb",
         "//pkg/kv/kvserver/logstore",
         "//pkg/roachpb",
         "//pkg/storage",
+        "//pkg/util/envutil",
     ],
 )

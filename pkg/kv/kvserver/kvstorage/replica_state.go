@@ -10,6 +10,8 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/wag"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/wag/wagpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/stateloader"
 	"github.com/cockroachdb/cockroach/pkg/raft/raftpb"
@@ -127,11 +129,12 @@ const CreateUninitReplicaTODO = 0
 func CreateUninitializedReplica(
 	ctx context.Context,
 	eng storage.Engine,
+	ww *wag.Writer,
 	storeID roachpb.StoreID,
 	rangeID roachpb.RangeID,
 	replicaID roachpb.ReplicaID,
 ) (kvpb.LogID, error) {
-	logID := kvpb.TODOLogIDRotate
+	var logID kvpb.LogID
 	sl := stateloader.Make(rangeID)
 	// Before creating the replica, see if there is a tombstone which would
 	// indicate that this replica has been removed.
@@ -145,8 +148,11 @@ func CreateUninitializedReplica(
 		// TODO(sep-raft-log): move the LogID forward and store it with the
 		// replicaID. The quirk in the comment below will no longer exist when LogID
 		// starts rotating, because the HardState will not be reused.
-		_ = ts.NextLogID
+		logID = wag.NextLogID(ts.NextLogID)
 	}
+
+	b := eng.NewWriteBatch()
+	defer b.Close()
 	// Write the RaftReplicaID for this replica. This is the only place in the
 	// CockroachDB code that we are creating a new *uninitialized* replica.
 	// Note that it is possible that we have already created the HardState for
@@ -160,9 +166,23 @@ func CreateUninitializedReplica(
 	//   this newer replica is harmless since it just limits the votes for
 	//   this replica.
 	_ = CreateUninitReplicaTODO
-	if err := sl.SetRaftReplicaID(ctx, eng, kvserverpb.RaftReplicaID{
+	if err := sl.SetRaftReplicaID(ctx, b, kvserverpb.RaftReplicaID{
 		ReplicaID: replicaID, LogID: logID,
 	}); err != nil {
+		return 0, err
+	}
+
+	if wag.Enabled {
+		if err := wag.Write(eng, ww.Next(1), wagpb.Node{
+			Addr:   wagpb.Addr{RangeID: rangeID, ReplicaID: replicaID, LogID: int64(logID)},
+			Type:   wagpb.NodeType_NodeCreate,
+			Batch:  wagpb.Batch{Data: b.Repr()},
+			Create: rangeID,
+		}); err != nil {
+			return 0, err
+		}
+	}
+	if err := b.Commit(false /* sync */); err != nil {
 		return 0, err
 	}
 
