@@ -187,7 +187,7 @@ func IterateIDPrefixKeys(
 			return nil
 		}
 
-		curRangeID, _, _, _, err := keys.DecodeRangeIDKey(unsafeKey.Key)
+		curRangeID, _, _, _, _, err := keys.DecodeRangeIDKey(unsafeKey.Key)
 		if err != nil {
 			return err
 		}

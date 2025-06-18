@@ -238,7 +238,7 @@ func checkStoreRaftState(
 
 	if _, err := storage.MVCCIterate(ctx, db, start, end, hlc.MaxTimestamp,
 		storage.MVCCScanOptions{Inconsistent: true}, func(kv roachpb.KeyValue) error {
-			rangeID, _, suffix, detail, err := keys.DecodeRangeIDKey(kv.Key)
+			rangeID, _, _, suffix, detail, err := keys.DecodeRangeIDKey(kv.Key)
 			if err != nil {
 				return err
 			}

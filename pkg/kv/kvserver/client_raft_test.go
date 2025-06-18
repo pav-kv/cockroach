@@ -5313,7 +5313,10 @@ func TestProcessSplitAfterRightHandSideHasBeenRemoved(t *testing.T) {
 		getHardState := func(
 			t *testing.T, store *kvserver.Store, rangeID roachpb.RangeID,
 		) raftpb.HardState {
-			hs, err := logstore.NewStateLoader(rangeID, kvpb.TODOLogID).LoadHardState(ctx, store.LogEngine())
+			id, err := stateloader.Make(rangeID).LoadRaftReplicaID(ctx, store.StateEngine())
+			// require.NoError(t, err)
+			_ = err // NB: can be "not found"
+			hs, err := logstore.NewStateLoader(rangeID, id.LogID).LoadHardState(ctx, store.LogEngine())
 			require.NoError(t, err)
 			return hs
 		}
