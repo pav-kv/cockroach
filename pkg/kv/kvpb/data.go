@@ -207,11 +207,13 @@ func (id LogID) String() string {
 func (id LogID) SafeValue() {}
 
 const (
-	// TODOLogID is the zero LogID which identifies the old way of storing raft
+	// LogIDZero is the zero LogID which identifies the old way of storing raft
 	// state under RangeID-local keys. The new way will place it under LogID-aware
 	// keys.
+	LogIDZero = LogID(0)
+	// TODOLogID is to be replaced with the current LogID in all places it's used.
 	// TODO(sep-raft-log): make all users of this const aware of the new schema.
-	TODOLogID = LogID(0)
+	TODOLogID = LogIDZero
 
 	// TODOLogIDRotate is a placeholder for the code which should increment LogID
 	// and place the raft state under the new LogID. This is done when creating an

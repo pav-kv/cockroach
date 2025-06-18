@@ -449,7 +449,7 @@ func isAbortSpanKey(key roachpb.Key) bool {
 		return false
 	}
 
-	_ /* rangeID */, infix, suffix, _ /* detail */, err := keys.DecodeRangeIDKey(key)
+	_ /* rangeID */, _ /* logID */, infix, suffix, _ /* detail */, err := keys.DecodeRangeIDKey(key)
 	if err != nil {
 		return false
 	}
@@ -7386,7 +7386,7 @@ func computeStatsForIterWithVisitors(
 			// Check for ignored keys.
 			if bytes.HasPrefix(unsafeKey.Key, keys.LocalRangeIDPrefix) {
 				// RangeID-local key.
-				_ /* rangeID */, infix, suffix, _ /* detail */, err := keys.DecodeRangeIDKey(unsafeKey.Key)
+				_ /* rangeID */, _ /* logID */, infix, suffix, _ /* detail */, err := keys.DecodeRangeIDKey(unsafeKey.Key)
 				if err != nil {
 					return enginepb.MVCCStats{}, errors.Wrap(err, "unable to decode rangeID key")
 				}

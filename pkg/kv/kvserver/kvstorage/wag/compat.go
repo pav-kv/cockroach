@@ -6,15 +6,15 @@
 package wag
 
 import (
-	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/util/envutil"
 )
 
 var Enabled = envutil.EnvOrDefaultBool("COCKROACH_ENABLE_WAG", false)
 
-func NextLogID(next kvserverpb.LogID) kvserverpb.LogID {
+func NextLogID(next kvpb.LogID) kvpb.LogID {
 	if Enabled {
 		return next
 	}
-	return kvserverpb.TODOLogID
+	return kvpb.TODOLogID
 }

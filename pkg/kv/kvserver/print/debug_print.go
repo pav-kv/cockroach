@@ -400,10 +400,12 @@ func tryRangeIDKey(kv storage.MVCCKeyValue) (string, error) {
 	if !kv.Key.Timestamp.IsEmpty() {
 		return "", fmt.Errorf("range ID keys shouldn't have timestamps: %s", kv.Key)
 	}
-	_, _, suffix, _, err := keys.DecodeRangeIDKey(kv.Key.Key)
+	_, logID, infix, suffix, _, err := keys.DecodeRangeIDKey(kv.Key.Key)
 	if err != nil {
 		return "", err
 	}
+
+	fmt.Println(logID, infix, suffix)
 
 	// All range ID keys are stored inline on the metadata.
 	var meta enginepb.MVCCMetadata
