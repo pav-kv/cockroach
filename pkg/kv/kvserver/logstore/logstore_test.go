@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/print"
@@ -24,9 +23,17 @@ import (
 )
 
 func TestRaftStorageWrites(t *testing.T) {
+	for _, logID := range []kvpb.LogID{kvpb.LogIDZero, 1} {
+		t.Run(fmt.Sprintf("%s-%d", t.Name(), logID), func(t *testing.T) {
+			testRaftStorageWrites(t, logID)
+		})
+	}
+}
+
+func testRaftStorageWrites(t *testing.T, logID kvpb.LogID) {
 	ctx := context.Background()
 	const rangeID = roachpb.RangeID(123)
-	sl := NewStateLoader(rangeID, kvpb.TODOLogID)
+	sl := NewStateLoader(rangeID, logID)
 	eng := storage.NewDefaultInMemForTesting()
 	defer eng.Close()
 
@@ -53,7 +60,7 @@ func TestRaftStorageWrites(t *testing.T) {
 	}
 	stats := func() int64 {
 		t.Helper()
-		prefix := keys.RaftLogPrefix(rangeID)
+		prefix := sl.RaftLogPrefix()
 		prefixEnd := prefix.PrefixEnd()
 		ms, err := storage.ComputeStats(ctx, eng, prefix, prefixEnd, 0 /* nowNanos */)
 		require.NoError(t, err)
@@ -107,5 +114,5 @@ func TestRaftStorageWrites(t *testing.T) {
 
 	output = strings.ReplaceAll(output, "\n\n", "\n")
 	output = strings.ReplaceAll(output, "\n\n", "\n")
-	echotest.Require(t, output, filepath.Join("testdata", t.Name()+".txt"))
+	echotest.Require(t, output, filepath.Join("testdata", filepath.Base(t.Name())+".txt"))
 }

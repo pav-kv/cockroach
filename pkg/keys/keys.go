@@ -271,25 +271,31 @@ func makeRangeIDReplicatedKey(rangeID roachpb.RangeID, suffix, detail roachpb.RK
 // suffix, and detail.
 func DecodeRangeIDKey(
 	key roachpb.Key,
-) (rangeID roachpb.RangeID, infix, suffix, detail roachpb.Key, err error) {
+) (rangeID roachpb.RangeID, logID uint64, infix, suffix, detail roachpb.Key, err error) {
 	if !bytes.HasPrefix(key, LocalRangeIDPrefix) {
-		return 0, nil, nil, nil, errors.Errorf("key %s does not have %s prefix", key, LocalRangeIDPrefix)
+		return 0, 0, nil, nil, nil, errors.Errorf("key %s does not have %s prefix", key, LocalRangeIDPrefix)
 	}
 	// Cut the prefix, the Range ID, and the infix specifier.
 	b := key[len(LocalRangeIDPrefix):]
 	b, rangeInt, err := encoding.DecodeUvarintAscending(b)
 	if err != nil {
-		return 0, nil, nil, nil, err
+		return 0, 0, nil, nil, nil, err
 	}
 	if len(b) < localSuffixLength+1 {
-		return 0, nil, nil, nil, errors.Errorf("malformed key does not contain range ID infix and suffix")
+		return 0, 0, nil, nil, nil, errors.Errorf("malformed key does not contain range ID infix and suffix")
 	}
 	infix = b[:1]
+	if infix[0] == localRangeIDLogIDInfix[0] {
+		b, logID, err = encoding.DecodeUint64Ascending(b)
+		if err != nil {
+			return 0, 0, nil, nil, nil, err
+		}
+	}
 	b = b[1:]
 	suffix = b[:localSuffixLength]
 	b = b[localSuffixLength:]
 
-	return roachpb.RangeID(rangeInt), infix, suffix, b, nil
+	return roachpb.RangeID(rangeInt), logID, infix, suffix, b, nil
 }
 
 // AbortSpanKey returns a range-local key by Range ID for an
@@ -312,7 +318,7 @@ func ReplicatedSharedLocksTransactionLatchingKey(
 // DecodeAbortSpanKey decodes the provided AbortSpan entry,
 // returning the transaction ID.
 func DecodeAbortSpanKey(key roachpb.Key, dest []byte) (uuid.UUID, error) {
-	_, _, suffix, detail, err := DecodeRangeIDKey(key)
+	_, _, _, suffix, detail, err := DecodeRangeIDKey(key)
 	if err != nil {
 		return uuid.UUID{}, err
 	}

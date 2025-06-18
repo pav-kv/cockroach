@@ -428,8 +428,18 @@ func localRangeIDKeyPrint(
 
 	// Print and remove the rangeID infix specifier.
 	if len(key) != 0 {
-		buf.Printf("/%s", string(key[0]))
+		infix := key[0]
+		buf.Printf("/%s", string(infix))
 		key = key[1:]
+		if infix == localRangeIDLogIDInfix[0] {
+			var logID uint64
+			key, logID, err = encoding.DecodeUint64Ascending(key)
+			if err != nil {
+				buf.Printf("/err<%v:%q>", err, []byte(key))
+				return
+			}
+			fmt.Fprintf(buf, "/%d", logID)
+		}
 	}
 
 	// Get the suffix.
