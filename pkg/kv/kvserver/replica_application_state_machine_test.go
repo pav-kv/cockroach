@@ -250,8 +250,9 @@ func TestReplicaStateMachineRaftLogTruncationStronglyCoupled(t *testing.T) {
 			}
 			require.Equal(t, expectedSize, ls.shMu.size)
 			require.Equal(t, accurate, ls.shMu.sizeTrusted)
-			truncState, err := logstore.NewStateLoader(r.RangeID, kvpb.TODOLogID).LoadRaftTruncatedState(
-				context.Background(), tc.engine)
+			truncState, err := logstore.NewStateLoader(
+				r.RangeID, r.logStorage.shMu.logID,
+			).LoadRaftTruncatedState(context.Background(), tc.engine)
 			require.NoError(t, err)
 			require.Equal(t, ls.shMu.trunc.Index, truncState.Index)
 		}()
