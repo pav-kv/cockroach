@@ -13,8 +13,6 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/clusterversion"
 	"github.com/cockroachdb/cockroach/pkg/keys"
-	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
-	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/loqrecovery/loqrecoverypb"
@@ -301,10 +299,14 @@ func applyReplicaUpdate(
 	report.OldReplica, _ = report.RemovedReplicas.RemoveReplica(
 		update.NewReplica.NodeID, update.NewReplica.StoreID)
 
-	// Persist the new replica ID.
-	if err := sl.SetRaftReplicaID(ctx, readWriter, kvserverpb.RaftReplicaID{
-		ReplicaID: update.NewReplica.ReplicaID, LogID: kvpb.TODOLogID,
-	}); err != nil {
+	// Update the ReplicaID, but retain the old LogID and the entirety of the raft
+	// state/log that it implies.
+	id, err := sl.LoadRaftReplicaID(ctx, readWriter)
+	if err != nil {
+		return PrepareReplicaReport{}, errors.Wrap(err, "loading replica ID")
+	}
+	id.ReplicaID = update.NewReplica.ReplicaID
+	if err := sl.SetRaftReplicaID(ctx, readWriter, id); err != nil {
 		return PrepareReplicaReport{}, errors.Wrap(err, "setting new replica ID")
 	}
 
@@ -315,7 +317,7 @@ func applyReplicaUpdate(
 
 	// Update the HardState to clear the LeadEpoch, as otherwise we may risk
 	// seeing an epoch regression in raft. See #136908 for more details.
-	logSL := logstore.NewStateLoader(localDesc.RangeID, kvpb.TODOLogID)
+	logSL := logstore.NewStateLoader(localDesc.RangeID, id.LogID)
 	hs, err := logSL.LoadHardState(ctx, readWriter)
 	if err != nil {
 		return PrepareReplicaReport{}, errors.Wrap(err, "loading HardState")
