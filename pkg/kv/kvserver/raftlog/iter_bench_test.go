@@ -136,7 +136,7 @@ func BenchmarkIterator(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			it, err := NewIterator(ctx, rangeID, &mockReader{}, IterOptions{Hi: 123456})
+			it, err := NewIterator(ctx, rangeID, kvpb.TODOLogIDAny, &mockReader{}, IterOptions{Hi: 123456})
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -146,7 +146,7 @@ func BenchmarkIterator(b *testing.B) {
 	})
 
 	benchForOp := func(b *testing.B, method func(*Iterator) (bool, error)) {
-		it, err := NewIterator(ctx, rangeID, &mockReader{}, IterOptions{Hi: 123456})
+		it, err := NewIterator(ctx, rangeID, kvpb.TODOLogIDAny, &mockReader{}, IterOptions{Hi: 123456})
 		if err != nil {
 			b.Fatal(err)
 		}

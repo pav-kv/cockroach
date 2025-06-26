@@ -8,8 +8,8 @@ package raftlog
 import (
 	"context"
 
-	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
 	"github.com/cockroachdb/cockroach/pkg/raft/raftpb"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage"
@@ -46,7 +46,7 @@ type Reader interface {
 // Revisit this.
 type Iterator struct {
 	eng       Reader
-	prefixBuf keys.RangeIDPrefixBuf
+	prefixBuf logstore.KeyBuf
 
 	iter storageIter
 	// TODO(tbg): we're not reusing memory here. Since all of our allocs come
@@ -67,10 +67,10 @@ type IterOptions struct {
 //
 // Callers that can afford allocating a closure may prefer using Visit.
 func NewIterator(
-	ctx context.Context, rangeID roachpb.RangeID, eng Reader, opts IterOptions,
+	ctx context.Context, rangeID roachpb.RangeID, logID kvpb.LogID, eng Reader, opts IterOptions,
 ) (*Iterator, error) {
 	// TODO(tbg): can pool these most of the things below, incl. the *Iterator.
-	prefixBuf := keys.MakeRangeIDPrefixBuf(rangeID)
+	prefixBuf := logstore.MakeKeyBuf(rangeID, logID)
 	var upperBound roachpb.Key
 	if opts.Hi == 0 {
 		upperBound = prefixBuf.RaftLogPrefix().PrefixEnd()
@@ -146,7 +146,7 @@ func Visit(
 	lo, hi kvpb.RaftIndex,
 	fn func(raftpb.Entry) error,
 ) error {
-	it, err := NewIterator(ctx, rangeID, eng, IterOptions{Hi: hi})
+	it, err := NewIterator(ctx, rangeID, kvpb.TODOLogID, eng, IterOptions{Hi: hi})
 	if err != nil {
 		return err
 	}

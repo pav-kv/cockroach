@@ -110,7 +110,7 @@ LIMIT
 
 	// Determine LastIndex, LastTerm, and next MaxLeaseIndex by scanning
 	// existing log.
-	it, err := raftlog.NewIterator(ctx, rangeID, eng, raftlog.IterOptions{})
+	it, err := raftlog.NewIterator(ctx, rangeID, kvpb.TODOLogID, eng, raftlog.IterOptions{})
 	require.NoError(t, err)
 	defer it.Close()
 	raftID, err := stateloader.Make(rangeID).LoadRaftReplicaID(ctx, eng)
