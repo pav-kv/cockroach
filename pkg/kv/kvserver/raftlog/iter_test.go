@@ -13,10 +13,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverbase"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
 	"github.com/cockroachdb/cockroach/pkg/raft/raftpb"
 	"github.com/cockroachdb/cockroach/pkg/storage"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
@@ -151,7 +151,7 @@ func TestIteratorEmptyLog(t *testing.T) {
 	eng := storage.NewDefaultInMemForTesting()
 	defer eng.Close()
 	for _, hi := range []kvpb.RaftIndex{0, 1} {
-		it, err := NewIterator(context.Background(), rangeID, eng, IterOptions{Hi: hi})
+		it, err := NewIterator(context.Background(), rangeID, kvpb.TODOLogIDAny, eng, IterOptions{Hi: hi})
 		require.NoError(t, err)
 		ok, err := it.SeekGE(0)
 		it.Close()
@@ -205,7 +205,8 @@ func TestIterator(t *testing.T) {
 			eng := storage.NewDefaultInMemForTesting()
 			defer eng.Close()
 
-			const rangeID = 1
+			const rangeID, logID = 1, 5
+			sl := logstore.NewStateLoader(rangeID, logID)
 
 			// Populate raft log.
 			for _, ent := range tc.ents {
@@ -213,7 +214,7 @@ func TestIterator(t *testing.T) {
 				require.NoError(t, err)
 				metaB, err := e.ToRawBytes()
 				require.NoError(t, err)
-				require.NoError(t, eng.PutUnversioned(keys.RaftLogKey(rangeID, kvpb.RaftIndex(ent.Index)), metaB))
+				require.NoError(t, eng.PutUnversioned(sl.RaftLogKey(kvpb.RaftIndex(ent.Index)), metaB))
 			}
 
 			// Rather than handcrafting some invocations, just run all possible ones
@@ -246,7 +247,7 @@ func TestIterator(t *testing.T) {
 						hi = 0
 					}
 					t.Run(fmt.Sprintf("lo=%s,hi=%s", indToName(lo), indToName(hi)), func(t *testing.T) {
-						it, err := NewIterator(context.Background(), rangeID, eng, IterOptions{Hi: hi})
+						it, err := NewIterator(context.Background(), rangeID, logID, eng, IterOptions{Hi: hi})
 						require.NoError(t, err)
 						sl, err := consumeIter(it, lo)
 						it.Close()
