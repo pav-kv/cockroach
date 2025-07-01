@@ -143,10 +143,11 @@ func Visit(
 	ctx context.Context,
 	eng Reader,
 	rangeID roachpb.RangeID,
+	logID kvpb.LogID,
 	lo, hi kvpb.RaftIndex,
 	fn func(raftpb.Entry) error,
 ) error {
-	it, err := NewIterator(ctx, rangeID, kvpb.TODOLogID, eng, IterOptions{Hi: hi})
+	it, err := NewIterator(ctx, rangeID, logID, eng, IterOptions{Hi: hi})
 	if err != nil {
 		return err
 	}

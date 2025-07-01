@@ -12,6 +12,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/raftlog"
 	"github.com/cockroachdb/cockroach/pkg/raft/raftpb"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
@@ -28,7 +29,7 @@ func DumpRaftLog(w io.Writer, reader storage.Reader, rangeID roachpb.RangeID) er
 		_, _ = fmt.Fprintln(w)
 	}
 
-	return raftlog.Visit(ctx, reader, rangeID, 0, math.MaxUint64, func(ent raftpb.Entry) error {
+	return raftlog.Visit(ctx, reader, rangeID, kvpb.TODOLogID, 0, math.MaxUint64, func(ent raftpb.Entry) error {
 		put("****** index %d ******", ent.Index)
 		e, err := raftlog.NewEntry(ent)
 		if err != nil {

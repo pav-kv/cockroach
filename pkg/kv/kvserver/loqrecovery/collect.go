@@ -238,7 +238,7 @@ func GetDescriptorChangesFromRaftLog(
 	ctx context.Context, rangeID roachpb.RangeID, lo, hi kvpb.RaftIndex, reader storage.Reader,
 ) ([]loqrecoverypb.DescriptorChangeInfo, error) {
 	var changes []loqrecoverypb.DescriptorChangeInfo
-	if err := raftlog.Visit(ctx, reader, rangeID, lo, hi, func(ent raftpb.Entry) error {
+	if err := raftlog.Visit(ctx, reader, rangeID, kvpb.TODOLogID, lo, hi, func(ent raftpb.Entry) error {
 		e, err := raftlog.NewEntry(ent)
 		if err != nil {
 			return err
