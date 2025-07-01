@@ -174,7 +174,7 @@ func (r *replicaLogStorage) entriesLocked(
 	// TODO(pav-kv): we need better safety guardrails here. The log storage type
 	// can remember the readable bounds, and assert that reads do not cross them.
 	entries, _, loadedSize, err := logstore.LoadEntries(
-		r.ctx, r.ls.Engine, r.ls.RangeID, r.cache, r.ls.Sideload,
+		r.ctx, r.ls.Engine, r.ls.RangeID, r.shMu.logID, r.cache, r.ls.Sideload,
 		lo, hi, maxBytes,
 		nil, // bytesAccount is not used when reading under Replica.mu
 	)
@@ -228,7 +228,7 @@ func (r *replicaLogStorage) raftTermShMuLocked(index kvpb.RaftIndex) (kvpb.RaftT
 		return kvpb.RaftTerm(entry.Term), nil
 	}
 
-	entry, err := logstore.LoadEntry(r.ctx, r.ls.Engine, r.ls.RangeID, index)
+	entry, err := logstore.LoadEntry(r.ctx, r.ls.Engine, r.ls.RangeID, r.shMu.logID, index)
 	if err != nil {
 		return 0, err
 	}
@@ -353,7 +353,7 @@ func (r *replicaRaftMuLogSnap) entriesRaftMuLocked(
 		return nil, raft.ErrCompacted
 	}
 	entries, _, loadedSize, err := logstore.LoadEntries(
-		r.ctx, r.ls.Engine, r.ls.RangeID, r.cache, r.ls.Sideload,
+		r.ctx, r.ls.Engine, r.ls.RangeID, r.shMu.logID, r.cache, r.ls.Sideload,
 		lo, hi, maxBytes,
 		&r.raftMu.bytesAccount,
 	)
