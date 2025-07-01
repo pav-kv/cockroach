@@ -129,7 +129,7 @@ LIMIT
 	var lai kvpb.LeaseAppliedIndex
 	var lastTerm uint64
 	require.NoError(t, raftlog.Visit(
-		ctx, eng, rangeID, lastIndex, math.MaxUint64, func(entry raftpb.Entry) error {
+		ctx, eng, rangeID, raftID.LogID, lastIndex, math.MaxUint64, func(entry raftpb.Entry) error {
 			ent, err := raftlog.NewEntry(it.Entry())
 			require.NoError(t, err)
 			if lai < ent.Cmd.MaxLeaseIndex {

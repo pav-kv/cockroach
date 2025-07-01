@@ -555,13 +555,15 @@ func LoadEntry(
 	defer reader.Close()
 
 	entry, found := raftpb.Entry{}, false
-	if err := raftlog.Visit(ctx, reader, rangeID, index, index+1, func(ent raftpb.Entry) error {
-		if found {
-			return errors.Errorf("found more than one entry in [%d,%d)", index, index+1)
-		}
-		entry, found = ent, true
-		return nil
-	}); err != nil {
+	if err := raftlog.Visit(ctx, reader, rangeID, kvpb.TODOLogID, index, index+1,
+		func(ent raftpb.Entry) error {
+			if found {
+				return errors.Errorf("found more than one entry in [%d,%d)", index, index+1)
+			}
+			entry, found = ent, true
+			return nil
+		},
+	); err != nil {
 		return raftpb.Entry{}, err
 	} else if !found {
 		return raftpb.Entry{}, errors.Errorf("entry #%d not found", index)
@@ -658,7 +660,7 @@ func LoadEntries(
 
 	reader := eng.NewReader(storage.StandardDurability)
 	defer reader.Close()
-	if err := raftlog.Visit(ctx, reader, rangeID, expectedIndex, hi, scanFunc); err != nil {
+	if err := raftlog.Visit(ctx, reader, rangeID, kvpb.TODOLogID, expectedIndex, hi, scanFunc); err != nil {
 		return nil, 0, 0, err
 	}
 	eCache.Add(rangeID, ents, false /* truncate */)
