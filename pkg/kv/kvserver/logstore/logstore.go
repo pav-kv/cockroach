@@ -549,13 +549,17 @@ func (s *LogStore) ComputeSize(ctx context.Context) (int64, error) {
 // be parsed. The caller is expected to check the log bounds before this call,
 // to exclude the valid "not found" cases.
 func LoadEntry(
-	ctx context.Context, eng storage.Engine, rangeID roachpb.RangeID, index kvpb.RaftIndex,
+	ctx context.Context,
+	eng storage.Engine,
+	rangeID roachpb.RangeID,
+	logID kvpb.LogID,
+	index kvpb.RaftIndex,
 ) (raftpb.Entry, error) {
 	reader := eng.NewReader(storage.StandardDurability)
 	defer reader.Close()
 
 	entry, found := raftpb.Entry{}, false
-	if err := raftlog.Visit(ctx, reader, rangeID, kvpb.TODOLogID, index, index+1,
+	if err := raftlog.Visit(ctx, reader, rangeID, logID, index, index+1,
 		func(ent raftpb.Entry) error {
 			if found {
 				return errors.Errorf("found more than one entry in [%d,%d)", index, index+1)
@@ -594,6 +598,7 @@ func LoadEntries(
 	ctx context.Context,
 	eng storage.Engine,
 	rangeID roachpb.RangeID,
+	logID kvpb.LogID,
 	eCache *raftentry.Cache, // TODO(#145562): this should be the caller's concern
 	sideloaded SideloadStorage,
 	lo, hi kvpb.RaftIndex,
@@ -660,7 +665,7 @@ func LoadEntries(
 
 	reader := eng.NewReader(storage.StandardDurability)
 	defer reader.Close()
-	if err := raftlog.Visit(ctx, reader, rangeID, kvpb.TODOLogID, expectedIndex, hi, scanFunc); err != nil {
+	if err := raftlog.Visit(ctx, reader, rangeID, logID, expectedIndex, hi, scanFunc); err != nil {
 		return nil, 0, 0, err
 	}
 	eCache.Add(rangeID, ents, false /* truncate */)
