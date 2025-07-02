@@ -11,9 +11,10 @@ import (
 )
 
 var Enabled = envutil.EnvOrDefaultBool("COCKROACH_ENABLE_WAG", false)
+var LogIDEnabled = envutil.EnvOrDefaultBool("COCKROACH_ENABLE_LOGID", false)
 
 func NextLogID(next kvpb.LogID) kvpb.LogID {
-	if Enabled {
+	if LogIDEnabled {
 		return next
 	}
 	return kvpb.TODOLogID
