@@ -12,6 +12,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore/raftkeys"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/raftlog"
 	"github.com/cockroachdb/cockroach/pkg/raft/raftpb"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
@@ -38,12 +39,12 @@ import (
 // TODO(pavelkalinnikov): understand the split between logstore and raftlog
 // packages, reshuffle or merge them, including this StateLoader.
 type StateLoader struct {
-	KeyBuf
+	raftkeys.KeyBuf
 }
 
 // NewStateLoader creates a log StateLoader for the given range and log ID.
 func NewStateLoader(rangeID roachpb.RangeID, logID kvpb.LogID) StateLoader {
-	return StateLoader{KeyBuf: MakeKeyBuf(rangeID, logID)}
+	return StateLoader{KeyBuf: raftkeys.MakeKeyBuf(rangeID, logID)}
 }
 
 // EntryID is an (index, term) pair identifying a raft log entry.

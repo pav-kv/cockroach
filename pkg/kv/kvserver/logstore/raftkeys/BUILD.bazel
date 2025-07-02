@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "raftkeys",
+    srcs = ["keys.go"],
+    importpath = "github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore/raftkeys",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/keys",
+        "//pkg/kv/kvpb",
+        "//pkg/roachpb",
+    ],
+)

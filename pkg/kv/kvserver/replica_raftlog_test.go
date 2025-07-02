@@ -91,7 +91,7 @@ type replicaLogStorageTest struct {
 }
 
 func newReplicaLogStorageTest(t *testing.T) *replicaLogStorageTest {
-	const rangeID = 10
+	const rangeID, logID = 10, 1
 	rt := &replicaLogStorageTest{
 		t:       t,
 		stopper: stop.NewStopper(),
@@ -113,13 +113,14 @@ func newReplicaLogStorageTest(t *testing.T) *replicaLogStorageTest {
 			RangeID:     rangeID,
 			Engine:      eng,
 			Sideload:    sideloaded,
-			StateLoader: logstore.NewStateLoader(rangeID, kvpb.TODOLogIDAny),
+			StateLoader: logstore.NewStateLoader(rangeID, logID),
 			SyncWaiter:  logstore.NewSyncWaiterLoop(),
 			Settings:    st,
 		},
 	}
 	rt.ls.mu.RWMutex = &rt.mu.RWMutex
 	rt.ls.raftMu.Mutex = &rt.raftMu
+	rt.ls.shMu.logID = logID
 	return rt
 }
 

@@ -10,6 +10,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/keys",
+        "//pkg/kv/kvpb",
         "//pkg/kv/kvserver/kvserverpb",
         "//pkg/kv/kvserver/raftlog",
         "//pkg/raft/raftpb",
