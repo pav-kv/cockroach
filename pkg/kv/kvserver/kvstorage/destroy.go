@@ -7,8 +7,11 @@ package kvstorage
 
 import (
 	"context"
+	"math"
 
+	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/wag"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/rditer"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/stateloader"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
@@ -118,6 +121,7 @@ const DestroyReplicaTODO = 0
 func DestroyReplica(
 	ctx context.Context,
 	rangeID roachpb.RangeID,
+	logID kvpb.LogID,
 	reader storage.Reader,
 	writer storage.Writer,
 	nextReplicaID roachpb.ReplicaID,
@@ -135,6 +139,11 @@ func DestroyReplica(
 		return err
 	}
 
+	nextLogID := wag.NextLogID(logID + 1)
+	if nextReplicaID == math.MaxInt32 && wag.LogIDEnabled {
+		nextLogID = math.MaxUint64 // FIXME: use named constants from kvserver
+	}
+
 	// Save a tombstone to ensure that replica IDs never get reused. Assert that
 	// the provided tombstone moves the existing one strictly forward. Failure to
 	// do so indicates that something is going wrong in the replica lifecycle.
@@ -147,7 +156,9 @@ func DestroyReplica(
 			"cannot rewind tombstone from %d to %d", ts.NextReplicaID, nextReplicaID)
 	}
 	_ = DestroyReplicaTODO // 2.3
+	// ? FIXME: out of order?
 	return sl.SetRangeTombstone(ctx, writer, kvserverpb.RangeTombstone{
 		NextReplicaID: nextReplicaID, // NB: nextReplicaID > 0
+		NextLogID:     nextLogID,
 	})
 }

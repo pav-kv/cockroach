@@ -585,7 +585,8 @@ func (r *Replica) applySnapshotRaftMuLocked(
 
 	st := r.ClusterSettings()
 	prepInput := prepareSnapApplyInput{
-		id: r.ID(),
+		id:    r.ID(),
+		logID: r.logStorage.shMu.logID,
 
 		st:       st,
 		todoEng:  r.store.TODOEngine(),

@@ -25,7 +25,8 @@ import (
 
 // prepareSnapApplyInput contains the data needed to prepare the on-disk state for a snapshot.
 type prepareSnapApplyInput struct {
-	id storage.FullReplicaID
+	id    storage.FullReplicaID
+	logID kvpb.LogID
 
 	st       *cluster.Settings
 	todoEng  storage.Engine
@@ -49,7 +50,7 @@ func prepareSnapApply(
 ) {
 	_ = applySnapshotTODO // 3.1 + 1.1 + 2.5.
 	unreplicatedSSTFile, clearedUnreplicatedSpan, err := writeUnreplicatedSST(
-		ctx, input.id, input.st, input.truncState, input.hardState, input.sl, input.logSL,
+		ctx, input.id, input.logID, input.st, input.truncState, input.hardState, input.sl, input.logSL,
 	)
 	if err != nil {
 		return roachpb.Span{}, nil, err
@@ -78,6 +79,7 @@ func prepareSnapApply(
 func writeUnreplicatedSST(
 	ctx context.Context,
 	id storage.FullReplicaID,
+	logID kvpb.LogID,
 	st *cluster.Settings,
 	ts kvserverpb.RaftTruncatedState,
 	hs raftpb.HardState,
@@ -91,7 +93,7 @@ func writeUnreplicatedSST(
 	defer unreplicatedSST.Close()
 	// Clear the raft state/log, and initialize it again with the provided
 	// HardState and RaftTruncatedState.
-	clearedSpan, err := rewriteRaftState(ctx, id, hs, ts, sl, logSL, &unreplicatedSST)
+	clearedSpan, err := rewriteRaftState(ctx, id, logID, hs, ts, sl, logSL, &unreplicatedSST)
 	if err != nil {
 		return nil, roachpb.Span{}, err
 	}
@@ -111,6 +113,7 @@ func writeUnreplicatedSST(
 func rewriteRaftState(
 	ctx context.Context,
 	id storage.FullReplicaID,
+	logID kvpb.LogID,
 	hs raftpb.HardState,
 	ts kvserverpb.RaftTruncatedState,
 	sl stateloader.StateLoader,
@@ -137,14 +140,23 @@ func rewriteRaftState(
 	}
 	// We've cleared all the raft state above, so we are forced to write the
 	// RaftReplicaID again here.
-	if err := sl.SetRaftReplicaID(ctx, w, kvserverpb.RaftReplicaID{
-		ReplicaID: id.ReplicaID, LogID: kvpb.TODOLogIDRotate,
-	}); err != nil {
-		return roachpb.Span{}, errors.Wrapf(err, "unable to write RaftReplicaID")
+	if logID == kvpb.LogIDZero {
+		if err := sl.SetRaftReplicaID(ctx, w, kvserverpb.RaftReplicaID{
+			ReplicaID: id.ReplicaID, LogID: logID,
+		}); err != nil {
+			return roachpb.Span{}, errors.Wrapf(err, "unable to write RaftReplicaID")
+		}
 	}
 	// Update the log truncation state.
 	if err := logSL.SetRaftTruncatedState(ctx, w, &ts); err != nil {
 		return roachpb.Span{}, errors.Wrapf(err, "unable to write RaftTruncatedState")
+	}
+	if logID != kvpb.LogIDZero {
+		if err := sl.SetRaftReplicaID(ctx, w, kvserverpb.RaftReplicaID{
+			ReplicaID: id.ReplicaID, LogID: logID,
+		}); err != nil {
+			return roachpb.Span{}, errors.Wrapf(err, "unable to write RaftReplicaID")
+		}
 	}
 	return clearedSpan, nil
 }
@@ -199,7 +211,10 @@ func clearSubsumedReplicaDiskData(
 			UnreplicatedByRangeID: opts.ClearUnreplicatedByRangeID,
 		})
 		clearedSpans = append(clearedSpans, subsumedClearedSpans...)
-		if err := kvstorage.DestroyReplica(ctx, subDesc.RangeID, reader, &subsumedReplSST, mergedTombstoneReplicaID, opts); err != nil {
+		if err := kvstorage.DestroyReplica(
+			ctx, subDesc.RangeID, 0, // FIXME: should be the current LogID
+			reader, &subsumedReplSST, mergedTombstoneReplicaID, opts,
+		); err != nil {
 			subsumedReplSST.Close()
 			return nil, err
 		}
