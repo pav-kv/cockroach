@@ -64,6 +64,7 @@ func (s destroyStatus) Removed() bool {
 // know new replicas can never be created so this value is used even if we
 // don't know the current replica ID.
 const mergedTombstoneReplicaID roachpb.ReplicaID = math.MaxInt32
+const mergedTombstoneLogID kvpb.LogID = math.MaxUint64
 
 func (r *Replica) postDestroyRaftMuLocked(ctx context.Context, ms enginepb.MVCCStats) error {
 	// TODO(tschottdorf): at node startup, we should remove all on-disk
@@ -120,7 +121,10 @@ func (r *Replica) destroyRaftMuLocked(ctx context.Context, nextReplicaID roachpb
 		ClearUnreplicatedByRangeID: true,
 	}
 	// TODO(sep-raft-log): need both engines separately here.
-	if err := kvstorage.DestroyReplica(ctx, r.RangeID, r.store.TODOEngine(), batch, nextReplicaID, opts); err != nil {
+	if err := kvstorage.DestroyReplica(
+		ctx, r.RangeID, r.logStorage.shMu.logID,
+		r.store.TODOEngine(), batch, nextReplicaID, opts,
+	); err != nil {
 		return err
 	}
 	preTime := timeutil.Now()

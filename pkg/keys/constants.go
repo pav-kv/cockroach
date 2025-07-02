@@ -101,7 +101,8 @@ var (
 	// localTxnSpanGCThresholdSuffix is DEPRECATED and remains to prevent reuse.
 	localTxnSpanGCThresholdSuffix = []byte("tst-")
 
-	localRangeIDLogIDInfix = []byte("l")
+	// NB: "s" is between "r" and "u", to make ordering in prepareSnapApply work.
+	localRangeIDLogIDInfix = []byte("s")
 	// Use the same suffixes as in unreplicated space.
 	// TODO(sep-raft-log): migrate.
 	_ = LocalRaftHardStateSuffix      // "rfth"
