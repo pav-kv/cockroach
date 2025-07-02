@@ -9,7 +9,7 @@ import (
 	"context"
 
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
-	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore/raftkeys"
 	"github.com/cockroachdb/cockroach/pkg/raft/raftpb"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage"
@@ -46,7 +46,7 @@ type Reader interface {
 // Revisit this.
 type Iterator struct {
 	eng       Reader
-	prefixBuf logstore.KeyBuf
+	prefixBuf raftkeys.KeyBuf
 
 	iter storageIter
 	// TODO(tbg): we're not reusing memory here. Since all of our allocs come
@@ -70,7 +70,7 @@ func NewIterator(
 	ctx context.Context, rangeID roachpb.RangeID, logID kvpb.LogID, eng Reader, opts IterOptions,
 ) (*Iterator, error) {
 	// TODO(tbg): can pool these most of the things below, incl. the *Iterator.
-	prefixBuf := logstore.MakeKeyBuf(rangeID, logID)
+	prefixBuf := raftkeys.MakeKeyBuf(rangeID, logID)
 	var upperBound roachpb.Key
 	if opts.Hi == 0 {
 		upperBound = prefixBuf.RaftLogPrefix().PrefixEnd()

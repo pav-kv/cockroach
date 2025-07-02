@@ -1547,6 +1547,7 @@ GO_TARGETS = [
     "//pkg/kv/kvserver/load:load",
     "//pkg/kv/kvserver/lockspanset:lockspanset",
     "//pkg/kv/kvserver/lockspanset:lockspanset_test",
+    "//pkg/kv/kvserver/logstore/raftkeys:raftkeys",
     "//pkg/kv/kvserver/logstore:logstore",
     "//pkg/kv/kvserver/logstore:logstore_test",
     "//pkg/kv/kvserver/loqrecovery/loqrecoverypb:loqrecoverypb",
