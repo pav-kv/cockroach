@@ -77,9 +77,13 @@ func TestPrepareSnapApply(t *testing.T) {
 
 	sl := stateloader.Make(id.RangeID)
 	ctx := context.Background()
-	require.NoError(t, sl.SetRaftReplicaID(ctx, eng, id.ReplicaID))
+	require.NoError(t, sl.SetRaftReplicaID(ctx, eng, kvserverpb.RaftReplicaID{
+		ReplicaID: id.ReplicaID,
+	}))
 	for _, rID := range []roachpb.RangeID{101, 102} {
-		require.NoError(t, stateloader.Make(rID).SetRaftReplicaID(ctx, eng, id.ReplicaID))
+		require.NoError(t, stateloader.Make(rID).SetRaftReplicaID(ctx, eng, kvserverpb.RaftReplicaID{
+			ReplicaID: id.ReplicaID,
+		}))
 	}
 
 	swb := snapWriteBuilder{
