@@ -13,7 +13,10 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/wag/wagpb"
 	"github.com/cockroachdb/cockroach/pkg/storage"
+	"github.com/cockroachdb/cockroach/pkg/util/envutil"
 )
+
+var Enabled = envutil.EnvOrDefaultBool("COCKROACH_ENABLE_WAG", false)
 
 // Seq is the WAG sequencer. It allocates consecutive unique sequence numbers to
 // assist the writes of the WAG nodes in a topologically sorted order.

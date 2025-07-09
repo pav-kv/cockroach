@@ -10,6 +10,8 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/wag"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/wag/wagpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/stateloader"
 	"github.com/cockroachdb/cockroach/pkg/raft/raftpb"
@@ -120,7 +122,11 @@ const CreateUninitReplicaTODO = 0
 // Returns kvpb.RaftGroupDeletedError if this replica can not be created
 // because it has been deleted.
 func CreateUninitializedReplica(
-	ctx context.Context, eng storage.Engine, storeID roachpb.StoreID, id roachpb.FullReplicaID,
+	ctx context.Context,
+	eng storage.Engine,
+	storeID roachpb.StoreID,
+	ws *wag.Seq,
+	id roachpb.FullReplicaID,
 ) error {
 	sl := stateloader.Make(id.RangeID)
 	// Before creating the replica, see if there is a tombstone which would
@@ -133,6 +139,9 @@ func CreateUninitializedReplica(
 		return &kvpb.RaftGroupDeletedError{}
 	}
 
+	b := eng.NewWriteBatch()
+	defer b.Close()
+
 	// Write the RaftReplicaID for this replica. This is the only place in the
 	// CockroachDB code that we are creating a new *uninitialized* replica.
 	//
@@ -140,7 +149,20 @@ func CreateUninitializedReplica(
 	// non-existent. The only RangeID-specific key that can be present is the
 	// RangeTombstone inspected above.
 	_ = CreateUninitReplicaTODO
-	if err := sl.SetRaftReplicaID(ctx, eng, id.ReplicaID); err != nil {
+	if err := sl.SetRaftReplicaID(ctx, b, id.ReplicaID); err != nil {
+		return err
+	}
+	if wag.Enabled {
+		if err := wag.Write(eng, ws.Next(1), wagpb.Node{
+			Addr:     wagpb.Addr{RangeID: id.RangeID, ReplicaID: id.ReplicaID},
+			Type:     wagpb.NodeType_NodeCreate,
+			Mutation: wagpb.Mutation{Batch: b.Repr()},
+			Create:   id.RangeID,
+		}); err != nil {
+			return err
+		}
+	}
+	if err := b.Commit(false /* sync */); err != nil {
 		return err
 	}
 
