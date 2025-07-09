@@ -13,7 +13,10 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/wag/wagpb"
 	"github.com/cockroachdb/cockroach/pkg/storage"
+	"github.com/cockroachdb/cockroach/pkg/util/envutil"
 )
+
+var Enabled = envutil.EnvOrDefaultBool("COCKROACH_ENABLE_WAG", false)
 
 type Writer struct {
 	// TODO(pav-kv): initialize it on store restarts.
@@ -21,7 +24,7 @@ type Writer struct {
 }
 
 func (w *Writer) Next(count uint64) uint64 {
-	return w.index.Add(count)
+	return w.index.Add(count) - count
 }
 
 func Write(w storage.Writer, index uint64, node wagpb.Node) error {

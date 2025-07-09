@@ -47,6 +47,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/snaprecv"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/wag"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/liveness"
 	loadmonitor "github.com/cockroachdb/cockroach/pkg/kv/kvserver/load"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/logstore"
@@ -912,6 +913,7 @@ type Store struct {
 	storeLiveness        storeliveness.Fabric
 	syncWaiters          []*logstore.SyncWaiterLoop
 	raftEntryCache       *raftentry.Cache
+	wagWriter            wag.Writer
 	limiters             batcheval.Limiters
 	txnWaitMetrics       *txnwait.Metrics
 	raftMetrics          *raft.Metrics
