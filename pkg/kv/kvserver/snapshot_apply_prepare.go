@@ -9,8 +9,11 @@ import (
 	"context"
 
 	"github.com/cockroachdb/cockroach/pkg/keys"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/wag"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/wag/wagpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/rditer"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/stateloader"
 	"github.com/cockroachdb/cockroach/pkg/raft/raftpb"
@@ -63,6 +66,94 @@ func (s *snapWriteBuilder) prepareSnapApply(ctx context.Context) error {
 
 	_ = applySnapshotTODO // 2.3 (split)
 	return s.clearResidualDataOnNarrowSnapshot(ctx)
+}
+
+//  1. Log engine write (durable):
+//     1.1. For this replica, remove log entries at > RaftAppliedIndex.
+//     1.2. For subsumed, remove log entries at > RaftAppliedIndex.
+//     1.3. Update RaftTruncatedState and HardState.
+//     1.4. WAG: apply to RaftAppliedIndex.
+//     1.5. WAG: apply subsumed to RaftAppliedIndex.
+//     1.6. WAG: apply snapshot, with the state machine mutation (2).
+//
+//  2. State machine mutation:
+//     2.1. For subsumed, clear RangeID-local un-/replicated state.
+//     2.2. For subsumed, write RangeTombstone with max NextReplicaID.
+//     2.3. Clear MVCC keyspace for (this + subsumed + diff).
+//     2.4. Clear unreplicated RangeID-local state, retain RaftReplicaID.
+//     2.5. Ingest snapshot SSTs (replicated range/RangeID-local state).
+//
+//  3. Log engine GC (after state machine mutation 2 is durably applied):
+//     3.1. Remove log entries <= durable RaftAppliedIndex.
+//     3.2. For subsumed, remove the raft state.
+func (s *snapWriteBuilder) prepareSnapApplyWAG(ctx context.Context, ww *wag.Writer) error {
+	// 2.1. For subsumed, clear RangeID-local un-/replicated state.
+	// 2.2. For subsumed, write RangeTombstone with max NextReplicaID.
+	// 2.3. Clear MVCC keyspace for (this + subsumed + diff).
+	// 2.4. Clear unreplicated RangeID-local state, retain RaftReplicaID.
+	// 2.5. Ingest snapshot SSTs (replicated range/RangeID-local state).
+	if err := s.writeSST(ctx, func(ctx context.Context, writer storage.Writer) error {
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	b := s.todoEng.NewWriteBatch()
+	defer b.Close()
+
+	applied := kvpb.RaftIndex(0) // FIXME
+
+	// 1.1. Remove log entries at > RaftAppliedIndex.
+	begin := s.sl.RaftLogKey(applied + 1)
+	end := keys.RaftLogPrefix(s.id.RangeID).PrefixEnd()
+	// NB: We do not expect to see range keys in the unreplicated state, so
+	// we don't drop a range tombstone across the range key space.
+	if err := b.ClearRawRange(
+		begin, end, true /* pointKeys */, false, /* rangeKeys */
+	); err != nil {
+		return errors.Wrapf(err, "error clearing the raft log suffix")
+	}
+	// 1.3. Update HardState and the log truncation state.
+	if err := s.sl.SetHardState(ctx, b, s.hardState); err != nil {
+		return errors.Wrapf(err, "unable to write HardState")
+	}
+	if err := s.sl.SetRaftTruncatedState(ctx, b, &s.truncState); err != nil {
+		return errors.Wrapf(err, "unable to write RaftTruncatedState")
+	}
+	// TODO: 1.2
+
+	// 1.4. WAG: apply to RaftAppliedIndex.
+	index := ww.Next(uint64(1 + len(s.subsumedDescs) + 1))
+	if err := wag.Write(b, index, wagpb.Node{
+		Addr: wagpb.Addr{RangeID: s.id.RangeID, ReplicaID: 0, Index: applied}, // FIXME: old replica ID
+		Type: wagpb.NodeType_NodeApply,
+	}); err != nil {
+		return errors.Wrapf(err, "unable to write apply WAG node")
+	}
+	// 1.5. WAG: apply subsumed to RaftAppliedIndex.
+	for _, desc := range s.subsumedDescs {
+		index++
+		if err := wag.Write(b, index, wagpb.Node{
+			Addr: wagpb.Addr{RangeID: desc.RangeID, ReplicaID: 0, Index: 0}, // FIXME
+			Type: wagpb.NodeType_NodeApply,
+		}); err != nil {
+			return errors.Wrapf(err, "unable to write apply WAG node")
+		}
+	}
+	// 1.6. WAG: apply snapshot, with the state machine mutation (2).
+	index++
+	if err := wag.Write(b, index, wagpb.Node{
+		Addr:     wagpb.Addr{RangeID: s.id.RangeID, ReplicaID: s.id.ReplicaID, Index: s.truncState.Index},
+		Type:     wagpb.NodeType_NodeSnap,
+		Mutation: wagpb.Mutation{Batch: nil}, // FIXME
+		Destroy:  nil,                        // FIXME: subsumedDescs range IDs
+	}); err != nil {
+		return errors.Wrapf(err, "unable to write apply snapshot WAG node")
+	}
+
+	// FIXME: write ReplicaID as in rewriteRaftState
+	_ = applySnapshotTODO // 1.2 + 2.1 + 2.2 + 2.3 (diff) + 3.2
+	return s.clearSubsumedReplicaDiskData(ctx)
 }
 
 // rewriteRaftState clears and rewrites the unreplicated rangeID-local key space
