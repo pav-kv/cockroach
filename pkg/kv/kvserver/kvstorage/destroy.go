@@ -152,3 +152,53 @@ func DestroyReplica(
 		NextReplicaID: nextReplicaID, // NB: nextReplicaID > 0
 	})
 }
+
+func Destroy(
+	ctx context.Context,
+	rangeID roachpb.RangeID,
+	reader storage.Reader,
+	writer storage.Writer,
+	nextReplicaID roachpb.ReplicaID,
+	opts ClearRangeDataOptions,
+) error {
+	sl := stateloader.Make(rangeID)
+	if id, err := sl.LoadRaftReplicaID(ctx, reader); err != nil {
+		return err
+	} else if nextReplicaID <= id.ReplicaID {
+		return errors.AssertionFailedf("replica r%d/%d must not survive its own tombstone", rangeID, id.ReplicaID)
+	}
+	// Save a tombstone to ensure that replica IDs never get reused. Assert that
+	// the provided tombstone moves the existing one strictly forward. Failure to
+	// do so indicates that something is going wrong in the replica lifecycle.
+	if ts, err := sl.LoadRangeTombstone(ctx, reader); err != nil {
+		return err
+	} else if nextReplicaID <= ts.NextReplicaID {
+		return errors.AssertionFailedf("cannot rewind tombstone from %d to %d", ts.NextReplicaID, nextReplicaID)
+	} else if err := sl.SetRangeTombstone(ctx, writer, kvserverpb.RangeTombstone{
+		NextReplicaID: nextReplicaID, // NB: nextReplicaID > 0
+	}); err != nil {
+		return err
+	}
+
+	// 2.1. RangeID-local replicated state.
+	if err := ClearRangeData(ctx, rangeID, reader, writer, ClearRangeDataOptions{
+		ClearReplicatedByRangeID: opts.ClearReplicatedByRangeID,
+	}); err != nil {
+		return err
+	}
+	// 2.1. RangeID-local unreplicated state.
+	if err := writer.ClearEngineKey(storage.EngineKey{
+		Key: sl.RaftReplicaIDKey(),
+	}, storage.ClearOptions{}); err != nil {
+		return err
+	}
+	if err := writer.ClearEngineKey(storage.EngineKey{
+		Key: sl.RangeLastReplicaGCTimestampKey(),
+	}, storage.ClearOptions{}); err != nil {
+		return err
+	}
+	// 2.2. (optional) Clear replicated MVCC span.
+	return ClearRangeData(ctx, rangeID, reader, writer, ClearRangeDataOptions{
+		ClearReplicatedBySpan: opts.ClearReplicatedBySpan,
+	})
+}
