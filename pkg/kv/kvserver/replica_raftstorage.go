@@ -586,7 +586,11 @@ func (r *Replica) applySnapshotRaftMuLocked(
 		sr.mu.Unlock()
 		sr.readOnlyCmdMu.Unlock()
 
-		subsume = append(subsume, destroyReplicaInfo{id: sr.ID(), desc: srDesc})
+		subsume = append(subsume, destroyReplicaInfo{
+			id:      sr.ID(),
+			desc:    srDesc,
+			applied: sr.shMu.state.RaftAppliedIndex,
+		})
 	}
 
 	// NB: subsumedDescs in snapWriteBuilder must be sorted by start key. This

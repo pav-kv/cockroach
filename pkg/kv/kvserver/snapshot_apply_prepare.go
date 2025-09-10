@@ -27,8 +27,9 @@ import (
 // from storage.
 // TODO(pav-kv): for WAG, add the truncated state and applied index. See #152845.
 type destroyReplicaInfo struct {
-	id   roachpb.FullReplicaID
-	desc *roachpb.RangeDescriptor
+	id      roachpb.FullReplicaID
+	desc    *roachpb.RangeDescriptor
+	applied kvpb.RaftIndex
 }
 
 // snapWriteBuilder contains the data needed to prepare the on-disk state for a
