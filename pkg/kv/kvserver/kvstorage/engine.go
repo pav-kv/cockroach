@@ -91,7 +91,7 @@ func (b *Batch) Close() {
 // TODO returns the "unified" batch. To be replaced by state machine and raft
 // batch access.
 //
-// Remaining users: splitPreApply, DestroyReplica, log truncations.
+// Remaining users: splitPreApply, log truncations.
 func (b *Batch) TODO() storage.Batch {
 	if buildutil.CrdbTestBuild && b.raft != nil && b.raft != b.state {
 		panic("separated engines are not supported")

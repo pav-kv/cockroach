@@ -83,6 +83,77 @@ func TestDestroyReplica(t *testing.T) {
 	echotest.Require(t, str, filepath.Join(datapathutils.TestDataPath(t), t.Name()+".txt"))
 }
 
+// TODO(pav-kv): don't copy-paste.
+func TestDestroyReplicaSep(t *testing.T) {
+	defer leaktest.AfterTest(t)()
+	defer log.Scope(t).Close(t)
+
+	storage.DisableMetamorphicSimpleValueEncoding(t) // for deterministic output
+	eng := storage.NewDefaultInMemForTesting()
+	e := Engine{state: eng, raft: eng, isSep: true}
+	defer eng.Close()
+
+	var sb redact.StringBuilder
+	ctx := context.Background()
+	mutate := func(name string, write func(storage.ReadWriter)) {
+		b := eng.NewBatch()
+		defer b.Close()
+		write(b)
+		str, err := print.DecodeWriteBatch(b.Repr())
+		require.NoError(t, err)
+		_, err = sb.WriteString(fmt.Sprintf(">> %s:\n%s", name, str))
+		require.NoError(t, err)
+		require.NoError(t, b.Commit(false))
+	}
+	mutateSep := func(name string, write func(batch *Batch)) {
+		batch := e.NewBatch()
+		e.AddRaft(&batch)
+		defer batch.Close()
+		write(&batch)
+
+		str, err := print.DecodeWriteBatch(batch.raft.Repr())
+		require.NoError(t, err)
+		_, err = sb.WriteString(fmt.Sprintf(">> %s (raft):\n%s", name, str))
+		require.NoError(t, err)
+
+		str, err = print.DecodeWriteBatch(batch.state.Repr())
+		require.NoError(t, err)
+		_, err = sb.WriteString(fmt.Sprintf(">> %s (state):\n%s", name, str))
+		require.NoError(t, err)
+
+		require.NoError(t, batch.raft.Commit(true))
+		require.NoError(t, batch.state.Commit(false))
+	}
+
+	r := replicaInfo{
+		id:      roachpb.FullReplicaID{RangeID: 123, ReplicaID: 3},
+		hs:      raftpb.HardState{Term: 5, Commit: 14},
+		ts:      kvserverpb.RaftTruncatedState{Index: 10, Term: 5},
+		keys:    roachpb.RSpan{Key: []byte("a"), EndKey: []byte("z")},
+		last:    15,
+		applied: 12,
+	}
+	mutate("raft", func(rw storage.ReadWriter) {
+		r.createRaftState(ctx, t, rw)
+	})
+	mutate("state", func(rw storage.ReadWriter) {
+		r.createStateMachine(ctx, t, rw)
+	})
+	mutateSep("destroy", func(batch *Batch) {
+		require.NoError(t, DestroyReplicaSep(ctx, DestroyReplicaInfo{
+			FullReplicaID: r.id, Keys: r.keys,
+			Log: kvpb.RaftSpan{After: r.ts.Index, Last: r.applied},
+		}, r.id.ReplicaID+1, ClearRangeDataOptions{
+			ClearUnreplicatedByRangeID: true,
+			ClearReplicatedByRangeID:   true,
+			ClearReplicatedBySpan:      r.keys,
+		}, batch))
+	})
+
+	str := strings.ReplaceAll(sb.String(), "\n\n", "\n")
+	echotest.Require(t, str, filepath.Join(datapathutils.TestDataPath(t), t.Name()+".txt"))
+}
+
 // replicaInfo contains the basic info about the replica, used for generating
 // its storage counterpart.
 //

@@ -854,5 +854,9 @@ func (r *Replica) destroyInfoRaftMuLocked() kvstorage.DestroyReplicaInfo {
 	return kvstorage.DestroyReplicaInfo{
 		FullReplicaID: r.ID(),
 		Keys:          r.shMu.state.Desc.RSpan(),
+		Log: kvpb.RaftSpan{
+			After: r.asLogStorage().shMu.trunc.Index,
+			Last:  r.shMu.state.RaftAppliedIndex,
+		},
 	}
 }
