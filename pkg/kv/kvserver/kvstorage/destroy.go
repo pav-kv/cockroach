@@ -158,46 +158,46 @@ func DestroyReplica(
 }
 
 type StoreBatch struct {
-	rState storage.Reader
-	wState storage.Writer
-	rRaft  storage.Reader
-	wRaft  storage.Writer
+	RState storage.Reader
+	WState storage.Writer
+	RRaft  storage.Reader
+	WRaft  storage.Writer
 }
 
 func (s *StoreBatch) Separated() bool {
-	return s.wState != s.wRaft
+	return s.WState != s.WRaft
 }
 
-// destroyReplicaInfo contains the replica's metadata needed for its removal
+// DestroyReplicaInfo contains the replica's metadata needed for its removal
 // from storage.
 // FIXME: use the same in prepareSnapApply.
-type destroyReplicaInfo struct {
-	id   roachpb.FullReplicaID
-	keys roachpb.RSpan
-	log  kvpb.RaftSpan
+type DestroyReplicaInfo struct {
+	ID   roachpb.FullReplicaID
+	Keys roachpb.RSpan
+	Log  kvpb.RaftSpan
 }
 
 func DestroyReplicaSep(
 	ctx context.Context,
-	info destroyReplicaInfo,
+	info DestroyReplicaInfo,
 	batch StoreBatch,
 	nextReplicaID roachpb.ReplicaID,
 	opts ClearRangeDataOptions,
 ) error {
-	if info.id.ReplicaID >= nextReplicaID {
-		return errors.AssertionFailedf("replica %v must not survive its own tombstone", info.id)
+	if info.ID.ReplicaID >= nextReplicaID {
+		return errors.AssertionFailedf("replica %v must not survive its own tombstone", info.ID)
 	}
 
-	sl := stateloader.Make(info.id.RangeID)
+	sl := stateloader.Make(info.ID.RangeID)
 	// Assert that the replica ID in storage matches the in-memory one.
-	if id, err := sl.LoadRaftReplicaID(ctx, batch.rState); err != nil {
+	if id, err := sl.LoadRaftReplicaID(ctx, batch.RState); err != nil {
 		return err
-	} else if repID := id.ReplicaID; repID != info.id.ReplicaID {
-		return errors.AssertionFailedf("replica %v has a mismatching ID %d", info.id, repID)
+	} else if repID := id.ReplicaID; repID != info.ID.ReplicaID {
+		return errors.AssertionFailedf("replica %v has a mismatching ID %d", info.ID, repID)
 	}
 	// Assert that the tombstone moves strictly forward. Failure to do so
 	// indicates that something is going wrong in the replica lifecycle.
-	if ts, err := sl.LoadRangeTombstone(ctx, batch.rState); err != nil {
+	if ts, err := sl.LoadRangeTombstone(ctx, batch.RState); err != nil {
 		return err
 	} else if ts.NextReplicaID >= nextReplicaID {
 		return errors.AssertionFailedf(
@@ -219,9 +219,9 @@ func DestroyReplicaSep(
 
 	if opts.ClearReplicatedByRangeID {
 		opts.ClearReplicatedByRangeID = false
-		span := rditer.MakeRangeIDReplicatedSpan(info.id.RangeID)
+		span := rditer.MakeRangeIDReplicatedSpan(info.ID.RangeID)
 		if err := storage.ClearRangeWithHeuristic(
-			ctx, batch.rState, batch.wState,
+			ctx, batch.RState, batch.WState,
 			span.Key, span.EndKey, ClearRangeThresholdPointKeys,
 		); err != nil {
 			return err
@@ -234,35 +234,35 @@ func DestroyReplicaSep(
 
 		opts.ClearUnreplicatedByRangeID = false
 		// Save a tombstone to ensure that replica IDs never get reused.
-		if err := sl.SetRangeTombstone(ctx, batch.wState, kvserverpb.RangeTombstone{
+		if err := sl.SetRangeTombstone(ctx, batch.WState, kvserverpb.RangeTombstone{
 			NextReplicaID: nextReplicaID, // NB: nextReplicaID > 0
 		}); err != nil {
 			return err
 		}
-		if err := batch.wRaft.ClearEngineKey(storage.EngineKey{
+		if err := batch.WRaft.ClearEngineKey(storage.EngineKey{
 			Key: sl.RaftHardStateKey(),
 		}, storage.ClearOptions{}); err != nil {
 			return err
 		}
 		if err := storage.ClearRangeWithHeuristic(
-			ctx, batch.rRaft, batch.wRaft,
-			sl.RaftLogKey(info.log.Last+1),
-			keys.RaftLogPrefix(info.id.RangeID).PrefixEnd(),
+			ctx, batch.RRaft, batch.WRaft,
+			sl.RaftLogKey(info.Log.Last+1),
+			keys.RaftLogPrefix(info.ID.RangeID).PrefixEnd(),
 			ClearRangeThresholdPointKeys,
 		); err != nil {
 			return err
 		}
-		if err := batch.wState.ClearEngineKey(storage.EngineKey{
+		if err := batch.WState.ClearEngineKey(storage.EngineKey{
 			Key: sl.RaftReplicaIDKey(),
 		}, storage.ClearOptions{}); err != nil {
 			return err
 		}
-		if err := batch.wRaft.ClearEngineKey(storage.EngineKey{
+		if err := batch.WRaft.ClearEngineKey(storage.EngineKey{
 			Key: sl.RaftTruncatedStateKey(),
 		}, storage.ClearOptions{}); err != nil {
 			return err
 		}
-		if err := batch.wState.ClearEngineKey(storage.EngineKey{
+		if err := batch.WState.ClearEngineKey(storage.EngineKey{
 			Key: sl.RangeLastReplicaGCTimestampKey(),
 		}, storage.ClearOptions{}); err != nil {
 			return err
@@ -271,7 +271,7 @@ func DestroyReplicaSep(
 
 	// 2.2. (optional) Clear replicated MVCC span.
 	if !opts.ClearReplicatedBySpan.Equal(roachpb.RSpan{}) {
-		if err := ClearRangeData(ctx, info.id.RangeID, batch.rState, batch.wState, ClearRangeDataOptions{
+		if err := ClearRangeData(ctx, info.ID.RangeID, batch.RState, batch.WState, ClearRangeDataOptions{
 			ClearReplicatedBySpan: opts.ClearReplicatedBySpan,
 		}); err != nil {
 			return err

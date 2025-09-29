@@ -136,11 +136,11 @@ func TestDestroyReplicaSep(t *testing.T) {
 		r.createStateMachine(ctx, t, rw)
 	})
 	mutateSep("destroy", func(state, raft storage.ReadWriter) {
-		require.NoError(t, DestroyReplicaSep(ctx, destroyReplicaInfo{
-			id: r.id, keys: r.keys,
-			log: kvpb.RaftSpan{After: r.ts.Index, Last: r.applied},
+		require.NoError(t, DestroyReplicaSep(ctx, DestroyReplicaInfo{
+			ID: r.id, Keys: r.keys,
+			Log: kvpb.RaftSpan{After: r.ts.Index, Last: r.applied},
 		}, StoreBatch{
-			rState: state, wState: state, rRaft: raft, wRaft: raft,
+			RState: state, WState: state, RRaft: raft, WRaft: raft,
 		}, r.id.ReplicaID+1, ClearRangeDataOptions{
 			ClearUnreplicatedByRangeID: true,
 			ClearReplicatedByRangeID:   true,

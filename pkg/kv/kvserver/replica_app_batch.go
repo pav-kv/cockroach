@@ -39,6 +39,9 @@ type replicaAppBatch struct {
 
 	// batch accumulates writes implied by the raft entries in this batch.
 	batch storage.Batch
+	// raftBatch accumulates the log storage writes, if any.
+	raftBatch storage.Batch
+
 	// state is this batch's view of the replica's state. It is copied from
 	// under the Replica.mu when the batch is initialized and is updated in
 	// stageTrivialReplicatedEvalResult.
@@ -70,6 +73,15 @@ type replicaAppBatch struct {
 
 	// Reused by addAppliedStateKeyToBatch to avoid heap allocations.
 	asAlloc kvserverpb.RangeAppliedState
+}
+
+func (b *replicaAppBatch) storeBatch() kvstorage.StoreBatch {
+	return kvstorage.StoreBatch{
+		RState: b.batch,
+		WState: b.batch,
+		RRaft:  b.raftBatch,
+		WRaft:  b.raftBatch,
+	}
 }
 
 // Stage implements the apply.Batch interface. The method handles the first
@@ -370,6 +382,17 @@ func (b *replicaAppBatch) runPostAddTriggersReplicaOnly(
 		}); err != nil {
 			return errors.Wrapf(err, "unable to destroy replica before merge")
 		}
+		kvstorage.DestroyReplicaSep(ctx, kvstorage.DestroyReplicaInfo{
+			ID:   rhsRepl.ID(),
+			Keys: rhsRepl.Desc().KeySpan(),
+			Log: kvpb.RaftSpan{
+				After: rhsRepl.logStorage.shMu.trunc.Index,
+				Last:  rhsRepl.shMu.state.RaftAppliedIndex,
+			},
+		}, b.storeBatch(), mergedTombstoneReplicaID, kvstorage.ClearRangeDataOptions{
+			ClearReplicatedByRangeID:   true,
+			ClearUnreplicatedByRangeID: true,
+		})
 
 		// Shut down rangefeed processors on either side of the merge.
 		//
