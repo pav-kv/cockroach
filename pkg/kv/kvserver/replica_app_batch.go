@@ -321,7 +321,11 @@ func (b *replicaAppBatch) runPostAddTriggersReplicaOnly(
 		// NB: another reason why we shouldn't write HardState at evaluation time is
 		// that it belongs to the log engine, whereas the evaluated batch must
 		// contain only state machine updates.
-		splitPreApply(ctx, b.r, b.batch, res.Split.SplitTrigger, cmd.Cmd.ClosedTimestamp)
+		rhsInfo, err := b.r.validateSplit(ctx, res.Split.SplitTrigger, cmd.Cmd.ClosedTimestamp)
+		if err != nil {
+			log.KvExec.Fatalf(ctx, "%v", err)
+		}
+		splitPreApply(ctx, b.batch, res.Split.SplitTrigger, rhsInfo)
 
 		// The rangefeed processor will no longer be provided logical ops for
 		// its entire range, so it needs to be shut down and all registrations
