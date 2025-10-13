@@ -968,6 +968,7 @@ func loadSplitTriggerHelperInput(
 	ctx context.Context, rec EvalContext, reader storage.Reader,
 ) (splitTriggerHelperInput, error) {
 	sl := MakeStateLoader(rec)
+	desc := rec.Desc()
 	// Retrieve MVCC Stats from the current batch instead of using stats from the
 	// execution context. Stats in the context could diverge from storage snapshot
 	// of current request when lease extensions are applied. Lease expiration is a
@@ -982,6 +983,7 @@ func loadSplitTriggerHelperInput(
 	if err != nil {
 		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to fetch original range mvcc stats for split")
 	}
+
 	lhsLease, err := sl.LoadLease(ctx, reader)
 	if err != nil {
 		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to load lease")
@@ -994,14 +996,24 @@ func loadSplitTriggerHelperInput(
 	if err != nil {
 		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to load GCHint")
 	}
-	lastReplicaGC, err := rec.GetLastReplicaGCTimestamp(ctx)
-	if err != nil {
-		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to load last replica GC timestamp")
-	}
 	replicaVersion, err := sl.LoadVersion(ctx, reader)
 	if err != nil {
 		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to load replica version")
 	}
+
+	lastReplicaGC, err := rec.GetLastReplicaGCTimestamp(ctx)
+	if err != nil {
+		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to load last replica GC timestamp")
+	}
+	var lastConsistencyCheck hlc.Timestamp
+	if _, err := storage.MVCCGetProto(ctx, reader,
+		keys.QueueLastProcessedKey(desc.StartKey, "consistencyChecker"),
+		hlc.Timestamp{}, &lastConsistencyCheck, storage.MVCCGetOptions{},
+	); err != nil {
+		return splitTriggerHelperInput{}, errors.Wrap(err,
+			"unable to fetch the last consistency checker run for LHS")
+	}
+
 	return splitTriggerHelperInput{
 		desc:           rec.Desc(),
 		mvccStats:      stats,
@@ -1010,8 +1022,10 @@ func loadSplitTriggerHelperInput(
 		abortSpan:      rec.AbortSpan(),
 		gcThreshold:    gcThreshold,
 		gcHint:         gcHint,
-		lastReplicaGC:  lastReplicaGC,
 		replicaVersion: replicaVersion,
+
+		lastReplicaGC:        lastReplicaGC,
+		lastConsistencyCheck: lastConsistencyCheck,
 	}, nil
 }
 
@@ -1296,8 +1310,10 @@ type splitTriggerHelperInput struct {
 	abortSpan      *abortspan.AbortSpan
 	gcThreshold    *hlc.Timestamp
 	gcHint         *roachpb.GCHint
-	lastReplicaGC  hlc.Timestamp
 	replicaVersion roachpb.Version
+
+	lastReplicaGC        hlc.Timestamp
+	lastConsistencyCheck hlc.Timestamp
 }
 
 // splitTriggerHelper continues the work begun by splitTrigger, but has a
@@ -1403,17 +1419,9 @@ func splitTriggerHelper(
 	// Copy the last consistency checker run timestamp from the LHS to the RHS.
 	// This avoids running the consistency checker on the RHS immediately after
 	// the split.
-	lastTS := hlc.Timestamp{}
-	if _, err := storage.MVCCGetProto(ctx, batch,
-		keys.QueueLastProcessedKey(split.LeftDesc.StartKey, "consistencyChecker"),
-		hlc.Timestamp{}, &lastTS, storage.MVCCGetOptions{}); err != nil {
-		return enginepb.MVCCStats{}, result.Result{}, errors.Wrap(err,
-			"unable to fetch the last consistency checker run for LHS")
-	}
-
 	if err := storage.MVCCPutProto(ctx, batch,
 		keys.QueueLastProcessedKey(split.RightDesc.StartKey, "consistencyChecker"),
-		hlc.Timestamp{}, &lastTS,
+		hlc.Timestamp{}, &in.lastConsistencyCheck,
 		storage.MVCCWriteOptions{Stats: h.AbsPostSplitRight(), Category: fs.BatchEvalReadCategory}); err != nil {
 		return enginepb.MVCCStats{}, result.Result{}, errors.Wrap(err,
 			"unable to copy the last consistency checker run to RHS")
