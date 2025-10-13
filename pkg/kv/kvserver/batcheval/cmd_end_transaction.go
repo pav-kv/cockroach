@@ -26,6 +26,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/stateloader"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/settings"
+	"github.com/cockroachdb/cockroach/pkg/settings/cluster"
 	"github.com/cockroachdb/cockroach/pkg/storage"
 	"github.com/cockroachdb/cockroach/pkg/storage/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/storage/fs"
@@ -910,7 +911,7 @@ func RunCommitTrigger(
 			return result.Result{}, maybeWrapReplicaCorruptionError(ctx, err)
 		}
 		newMS, res, err := splitTrigger(
-			ctx, rec, batch, *ms, ct.SplitTrigger, in, txn.WriteTimestamp,
+			ctx, batch, *ms, ct.SplitTrigger, in, txn.WriteTimestamp, rec.ClusterSettings(),
 		)
 		if err != nil {
 			return result.Result{}, maybeWrapReplicaCorruptionError(ctx, err)
@@ -967,6 +968,20 @@ func loadSplitTriggerHelperInput(
 	ctx context.Context, rec EvalContext, reader storage.Reader,
 ) (splitTriggerHelperInput, error) {
 	sl := MakeStateLoader(rec)
+	// Retrieve MVCC Stats from the current batch instead of using stats from the
+	// execution context. Stats in the context could diverge from storage snapshot
+	// of current request when lease extensions are applied. Lease expiration is a
+	// special case that updates stats without obtaining latches and thus can
+	// execute concurrently with splitTrigger. As a result we must not write
+	// absolute stats values for LHS based on this value, always produce a delta
+	// since underlying stats in storage could change. At the same time it is safe
+	// to write absolute RHS stats since we hold lock for values, and
+	// "unprotected" lease key don't yet exist until this split operation creates
+	// RHS replica.
+	stats, err := sl.LoadMVCCStats(ctx, reader)
+	if err != nil {
+		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to fetch original range mvcc stats for split")
+	}
 	lhsLease, err := sl.LoadLease(ctx, reader)
 	if err != nil {
 		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to load lease")
@@ -979,14 +994,23 @@ func loadSplitTriggerHelperInput(
 	if err != nil {
 		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to load GCHint")
 	}
+	lastReplicaGC, err := rec.GetLastReplicaGCTimestamp(ctx)
+	if err != nil {
+		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to load last replica GC timestamp")
+	}
 	replicaVersion, err := sl.LoadVersion(ctx, reader)
 	if err != nil {
 		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to load replica version")
 	}
 	return splitTriggerHelperInput{
+		desc:           rec.Desc(),
+		mvccStats:      stats,
 		leftLease:      lhsLease,
+		leaseDuration:  rec.GetRangeLeaseDuration(),
+		abortSpan:      rec.AbortSpan(),
 		gcThreshold:    gcThreshold,
 		gcHint:         gcHint,
+		lastReplicaGC:  lastReplicaGC,
 		replicaVersion: replicaVersion,
 	}, nil
 }
@@ -1162,14 +1186,14 @@ func loadSplitTriggerHelperInput(
 // returned trigger and is handled by the Store.
 func splitTrigger(
 	ctx context.Context,
-	rec EvalContext,
 	batch storage.Batch,
 	bothDeltaMS enginepb.MVCCStats,
 	split *roachpb.SplitTrigger,
 	in splitTriggerHelperInput,
 	ts hlc.Timestamp,
+	st *cluster.Settings,
 ) (enginepb.MVCCStats, result.Result, error) {
-	desc := rec.Desc()
+	desc := in.desc
 	if !bytes.Equal(desc.StartKey, split.LeftDesc.StartKey) ||
 		!bytes.Equal(desc.EndKey, split.RightDesc.EndKey) {
 		return enginepb.MVCCStats{}, result.Result{}, errors.Errorf("range does not match splits: (%s-%s) + (%s-%s) != %s",
@@ -1210,24 +1234,8 @@ func splitTrigger(
 			"unable to compute range key stats delta for RHS")
 	}
 
-	// Retrieve MVCC Stats from the current batch instead of using stats from
-	// execution context. Stats in the context could diverge from storage snapshot
-	// of current request when lease extensions are applied. Lease expiration is
-	// a special case that updates stats without obtaining latches and thus can
-	// execute concurrently with splitTrigger. As a result we must not write
-	// absolute stats values for LHS based on this value, always produce a delta
-	// since underlying stats in storage could change. At the same time it is safe
-	// to write absolute RHS side stats since we hold lock for values, and
-	// "unprotected" lease key don't yet exist until this split operation creates
-	// RHS replica.
-	currentStats, err := MakeStateLoader(rec).LoadMVCCStats(ctx, batch)
-	if err != nil {
-		return enginepb.MVCCStats{}, result.Result{}, errors.Wrap(err,
-			"unable to fetch original range mvcc stats for split")
-	}
-
 	h := splitStatsHelperInput{
-		AbsPreSplitBothStored:    currentStats,
+		AbsPreSplitBothStored:    in.mvccStats,
 		DeltaBatchEstimated:      bothDeltaMS,
 		DeltaRangeKey:            rangeKeyDeltaMS,
 		PreSplitLeftUser:         split.PreSplitLeftUserStats,
@@ -1238,11 +1246,11 @@ func splitTrigger(
 		ScanRightFirst:           splitScansRightForStatsFirst || emptyRHS,
 		LeftUserIsEmpty:          emptyLHS,
 		RightUserIsEmpty:         emptyRHS,
-		MaxCountDiff:             MaxMVCCStatCountDiff.Get(&rec.ClusterSettings().SV),
-		MaxBytesDiff:             MaxMVCCStatBytesDiff.Get(&rec.ClusterSettings().SV),
+		MaxCountDiff:             MaxMVCCStatCountDiff.Get(&st.SV),
+		MaxBytesDiff:             MaxMVCCStatBytesDiff.Get(&st.SV),
 		UseEstimatesBecauseExternalBytesArePresent: split.UseEstimatesBecauseExternalBytesArePresent,
 	}
-	return splitTriggerHelper(ctx, rec, batch, in, h, split, ts)
+	return splitTriggerHelper(ctx, batch, in, h, split, ts, st)
 }
 
 // splitScansRightForStatsFirst controls whether the left hand side or the right
@@ -1281,9 +1289,14 @@ func makeScanStatsFn(
 // splitTriggerHelperInput contains metadata needed by the RHS when running the
 // splitTriggerHelper.
 type splitTriggerHelperInput struct {
+	desc           *roachpb.RangeDescriptor
+	mvccStats      enginepb.MVCCStats
 	leftLease      roachpb.Lease
+	leaseDuration  time.Duration
+	abortSpan      *abortspan.AbortSpan
 	gcThreshold    *hlc.Timestamp
 	gcHint         *roachpb.GCHint
+	lastReplicaGC  hlc.Timestamp
 	replicaVersion roachpb.Version
 }
 
@@ -1292,12 +1305,12 @@ type splitTriggerHelperInput struct {
 // splitStatsHelper.
 func splitTriggerHelper(
 	ctx context.Context,
-	rec EvalContext,
 	batch storage.Batch,
 	in splitTriggerHelperInput,
 	statsInput splitStatsHelperInput,
 	split *roachpb.SplitTrigger,
 	ts hlc.Timestamp,
+	st *cluster.Settings,
 ) (enginepb.MVCCStats, result.Result, error) {
 	// TODO(d4l3k): we should check which side of the split is smaller
 	// and compute stats for it instead of having a constraint that the
@@ -1306,16 +1319,11 @@ func splitTriggerHelper(
 	// NB: the replicated post-split left hand keyspace is frozen at this point.
 	// Only the RHS can be mutated (and we do so to seed its state).
 
-	// Copy the last replica GC timestamp. This value is unreplicated,
-	// which is why the MVCC stats are set to nil on calls to
-	// MVCCPutProto.
-	replicaGCTS, err := rec.GetLastReplicaGCTimestamp(ctx)
-	if err != nil {
-		return enginepb.MVCCStats{}, result.Result{}, errors.Wrap(err, "unable to fetch last replica GC timestamp")
-	}
+	// Copy the last replica GC timestamp. This value is unreplicated, which is
+	// why the MVCC stats are set to nil on calls to MVCCPutProto.
 	if err := storage.MVCCPutProto(
 		ctx, batch, keys.RangeLastReplicaGCTimestampKey(split.RightDesc.RangeID), hlc.Timestamp{},
-		&replicaGCTS, storage.MVCCWriteOptions{Category: fs.BatchEvalReadCategory}); err != nil {
+		&in.lastReplicaGC, storage.MVCCWriteOptions{Category: fs.BatchEvalReadCategory}); err != nil {
 		return enginepb.MVCCStats{}, result.Result{}, errors.Wrap(err, "unable to copy last replica GC timestamp")
 	}
 
@@ -1357,6 +1365,7 @@ func splitTriggerHelper(
 	shouldUseCrudeEstimates := statsInput.UseEstimatesBecauseExternalBytesArePresent &&
 		statsInput.AbsPreSplitBothStored.ContainsEstimates > 0
 
+	var err error
 	computeAccurateStats := (noPreComputedStats || manualSplit || emptyLeftOrRight || preComputedStatsDiff)
 	computeAccurateStats = computeAccurateStats && !shouldUseCrudeEstimates
 	if computeAccurateStats {
@@ -1384,9 +1393,9 @@ func splitTriggerHelper(
 	}
 
 	// Initialize the RHS range's AbortSpan by copying the LHS's.
-	if err := rec.AbortSpan().CopyTo(
+	if err := in.abortSpan.CopyTo(
 		ctx, batch, batch, h.AbsPostSplitRight(), ts, split.RightDesc.RangeID,
-		gc.TxnCleanupThreshold.Get(&rec.ClusterSettings().SV),
+		gc.TxnCleanupThreshold.Get(&st.SV),
 	); err != nil {
 		return enginepb.MVCCStats{}, result.Result{}, err
 	}
@@ -1461,7 +1470,7 @@ func splitTriggerHelper(
 		// the right-hand side elects a leader and collocates the lease and leader,
 		// it can promote the expiration-based lease back to a leader lease.
 		if rightLease.Type() == roachpb.LeaseLeader {
-			exp := rec.Clock().Now().Add(int64(rec.GetRangeLeaseDuration()), 0)
+			exp := rec.Clock().Now().Add(int64(in.leaseDuration), 0)
 			rightLease.Expiration = &exp
 			rightLease.Term = 0
 			rightLease.MinExpiration = hlc.Timestamp{}
@@ -1510,7 +1519,7 @@ func splitTriggerHelper(
 		// At that point, we'll no longer need to replicate the truncated state
 		// as all replicas will be responsible for writing it locally before
 		// applying the split.
-		if !rec.ClusterSettings().Version.IsActive(ctx, clusterversion.V25_4_WriteInitialTruncStateBeforeSplitApplication) {
+		if !st.Version.IsActive(ctx, clusterversion.V25_4_WriteInitialTruncStateBeforeSplitApplication) {
 			if err := stateloader.WriteInitialTruncState(ctx, batch, split.RightDesc.RangeID); err != nil {
 				return enginepb.MVCCStats{}, result.Result{}, errors.Wrap(err, "unable to write initial Replica state")
 			}
