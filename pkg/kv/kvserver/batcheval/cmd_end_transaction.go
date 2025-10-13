@@ -905,38 +905,10 @@ func RunCommitTrigger(
 	// each Replica when the corresponding Raft log entry is applied. Only one
 	// commit trigger can be set.
 	if ct.GetSplitTrigger() != nil {
-		sl := MakeStateLoader(rec)
-		lhsLease, err := sl.LoadLease(ctx, batch)
+		in, err := loadSplitTriggerHelperInput(ctx, rec, batch)
 		if err != nil {
-			return result.Result{}, maybeWrapReplicaCorruptionError(
-				ctx, errors.Wrap(err, "unable to load lease"),
-			)
+			return result.Result{}, maybeWrapReplicaCorruptionError(ctx, err)
 		}
-		gcThreshold, err := sl.LoadGCThreshold(ctx, batch)
-		if err != nil {
-			return result.Result{}, maybeWrapReplicaCorruptionError(
-				ctx, errors.Wrap(err, "unable to load GCThreshold"),
-			)
-		}
-		gcHint, err := sl.LoadGCHint(ctx, batch)
-		if err != nil {
-			return result.Result{}, maybeWrapReplicaCorruptionError(
-				ctx, errors.Wrap(err, "unable to load GCHint"),
-			)
-		}
-		replicaVersion, err := sl.LoadVersion(ctx, batch)
-		if err != nil {
-			return result.Result{}, maybeWrapReplicaCorruptionError(
-				ctx, errors.Wrap(err, "unable to load replica version"),
-			)
-		}
-		in := splitTriggerHelperInput{
-			leftLease:      lhsLease,
-			gcThreshold:    gcThreshold,
-			gcHint:         gcHint,
-			replicaVersion: replicaVersion,
-		}
-
 		newMS, res, err := splitTrigger(
 			ctx, rec, batch, *ms, ct.SplitTrigger, in, txn.WriteTimestamp,
 		)
@@ -987,6 +959,36 @@ func RunCommitTrigger(
 
 	log.KvExec.Fatalf(ctx, "unknown commit trigger: %+v", ct)
 	return result.Result{}, nil
+}
+
+// loadSplitTriggerHelperInput loads the given range's state necessary for
+// evaluating its split and producing the corresponding split trigger command.
+func loadSplitTriggerHelperInput(
+	ctx context.Context, rec EvalContext, reader storage.Reader,
+) (splitTriggerHelperInput, error) {
+	sl := MakeStateLoader(rec)
+	lhsLease, err := sl.LoadLease(ctx, reader)
+	if err != nil {
+		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to load lease")
+	}
+	gcThreshold, err := sl.LoadGCThreshold(ctx, reader)
+	if err != nil {
+		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to load GCThreshold")
+	}
+	gcHint, err := sl.LoadGCHint(ctx, reader)
+	if err != nil {
+		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to load GCHint")
+	}
+	replicaVersion, err := sl.LoadVersion(ctx, reader)
+	if err != nil {
+		return splitTriggerHelperInput{}, errors.Wrap(err, "unable to load replica version")
+	}
+	return splitTriggerHelperInput{
+		leftLease:      lhsLease,
+		gcThreshold:    gcThreshold,
+		gcHint:         gcHint,
+		replicaVersion: replicaVersion,
+	}, nil
 }
 
 // splitTrigger is called on a successful commit of a transaction containing an
