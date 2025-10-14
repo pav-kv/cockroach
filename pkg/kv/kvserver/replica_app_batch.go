@@ -136,7 +136,7 @@ func (b *replicaAppBatch) Stage(
 	}
 
 	// Stage the command's write batch in the application batch.
-	if err := b.ab.addWriteBatch(ctx, b.builder.Batch.TODO(), cmd); err != nil {
+	if err := b.ab.addWriteBatch(ctx, b.builder.Batch.State(), cmd); err != nil {
 		return nil, err
 	}
 
@@ -200,7 +200,7 @@ func (b *replicaAppBatch) runPreAddTriggersReplicaOnly(
 		// application there are no listening rangefeeds. So we do this only
 		// in Replica application.
 		if p, filter := b.r.getRangefeedProcessorAndFilter(); p != nil {
-			if err := populatePrevValsInLogicalOpLog(ctx, filter, ops, b.builder.Batch.TODO()); err != nil {
+			if err := populatePrevValsInLogicalOpLog(ctx, filter, ops, b.builder.Batch.State()); err != nil {
 				b.r.disconnectRangefeedWithErr(p, kvpb.NewError(err))
 			}
 		}
@@ -481,7 +481,7 @@ func (b *replicaAppBatch) runPostAddTriggersReplicaOnly(
 	// shutdown of the rangefeed in that situation, so we don't pass anything to
 	// the rangefeed. If no rangefeed is running at all, this call will be a noop.
 	if ops := cmd.Cmd.LogicalOpLog; cmd.Cmd.WriteBatch != nil {
-		b.r.handleLogicalOpLogRaftMuLocked(ctx, ops, b.builder.Batch.TODO())
+		b.r.handleLogicalOpLogRaftMuLocked(ctx, ops, b.builder.Batch.State())
 	} else if ops != nil {
 		log.KvExec.Fatalf(ctx, "non-nil logical op log with nil write batch: %v", cmd.Cmd)
 	}
@@ -593,7 +593,7 @@ func (b *replicaAppBatch) stageTrivialReplicatedEvalResult(
 		// are all safe.
 		b.state.ForceFlushIndex = roachpb.ForceFlushIndex{Index: cmd.Entry.Index}
 		if err := b.r.raftMu.stateLoader.SetForceFlushIndex(
-			ctx, b.builder.Batch.TODO(), b.state.Stats, &b.state.ForceFlushIndex,
+			ctx, b.builder.Batch.State(), b.state.Stats, &b.state.ForceFlushIndex,
 		); err != nil {
 			return err
 		}
@@ -646,7 +646,7 @@ func (b *replicaAppBatch) ApplyToStateMachine(ctx context.Context) error {
 	// application of this command. I.e. the loosely coupled truncation migration
 	// mentioned above likely needs to be done first.
 	sync := b.changeRemovesReplica || b.changeTruncatesSideloadedFiles
-	if err := b.builder.Batch.TODO().Commit(sync); err != nil {
+	if err := b.builder.Commit(sync); err != nil {
 		return errors.Wrapf(err, "unable to commit Raft entry batch")
 	}
 	b.builder.Close()
@@ -725,7 +725,7 @@ func (b *replicaAppBatch) addAppliedStateKeyToBatch(ctx context.Context) error {
 	// lease index along with the mvcc stats, all in one key.
 	loader := &b.r.raftMu.stateLoader
 	return loader.SetRangeAppliedState(
-		ctx, b.builder.Batch.TODO(), b.state.RaftAppliedIndex,
+		ctx, b.builder.Batch.State(), b.state.RaftAppliedIndex,
 		b.state.LeaseAppliedIndex, b.state.RaftAppliedIndexTerm,
 		b.state.Stats, b.state.RaftClosedTimestamp, &b.asAlloc,
 	)
