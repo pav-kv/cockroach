@@ -92,6 +92,9 @@ type Batch struct {
 
 // Close ends the lifetime of the batch and clears its resources.
 func (b Batch) Close() {
+	if b.state == nil {
+		return
+	}
 	// Close the raft batch only if it is separated from the state machine batch,
 	// to avoid double Close.
 	if b.raft != nil && b.raft != b.state {
@@ -100,4 +103,16 @@ func (b Batch) Close() {
 	b.raft = nil
 	b.state.Close()
 	b.state = nil
+}
+
+func (b Batch) TODO() storage.Batch {
+	return b.state
+}
+
+func (b Batch) State() storage.Batch {
+	return b.state
+}
+
+func (b Batch) Raft() storage.Batch {
+	return b.raft
 }
