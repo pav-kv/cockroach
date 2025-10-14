@@ -886,6 +886,7 @@ type Store struct {
 	Ident                *roachpb.StoreIdent // pointer to catch access before Start() is called
 	cfg                  StoreConfig
 	internalEngines      internalEngines
+	kvStorage            kvstorage.Engine
 	db                   *kv.DB
 	tsCache              tscache.Cache           // Most recent timestamps for keys / key ranges
 	allocator            allocatorimpl.Allocator // Makes allocation decisions
@@ -1495,6 +1496,7 @@ func NewStore(
 			todoEngine:  eng,
 			logEngine:   eng,
 		},
+		kvStorage:                         kvstorage.MakeEngine(eng, eng),
 		cfg:                               cfg,
 		db:                                cfg.DB, // TODO(tschottdorf): remove redundancy.
 		nodeDesc:                          nodeDesc,

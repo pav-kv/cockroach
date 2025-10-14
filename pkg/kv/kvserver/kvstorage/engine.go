@@ -76,3 +76,12 @@ func (b *Batch) Close() {
 	b.state.Close()
 	b.state = nil
 }
+
+// TODO returns the "unified" batch. To be replaced by state machine and raft
+// batch access.
+func (b *Batch) TODO() storage.Batch {
+	if buildutil.CrdbTestBuild && b.raft != nil && b.raft != b.state {
+		panic("separated engines are not supported")
+	}
+	return b.state
+}
