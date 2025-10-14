@@ -6,6 +6,7 @@
 package kvstorage
 
 import (
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvstorage/wag"
 	"github.com/cockroachdb/cockroach/pkg/storage"
 	"github.com/cockroachdb/cockroach/pkg/util/buildutil"
 	"github.com/cockroachdb/cockroach/pkg/util/envutil"
@@ -25,6 +26,7 @@ type Engine struct {
 	state storage.Engine // state machine engine
 	raft  storage.Engine // raft engine
 	isSep bool           // specifies whether the engines are separated
+	seq   wag.Seq
 }
 
 // MakeEngine returns an instance of Engine.
@@ -55,11 +57,20 @@ func (e *Engine) AddRaft(b *Batch) {
 	}
 }
 
+type Reader struct {
+	state storage.Reader
+	raft  storage.Reader
+}
+
 // Batch encapsulates the KV storage engine batch that allows writing to the
 // state machine and (optionally) raft state.
 type Batch struct {
 	state storage.Batch // state machine batch
 	raft  storage.Batch // raft state batch
+}
+
+func (b *Batch) IsSeparated() bool {
+	return b.raft != nil && b.raft != b.state
 }
 
 // Close ends the lifetime of the batch and clears its resources.
