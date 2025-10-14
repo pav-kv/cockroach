@@ -5,7 +5,17 @@
 
 package kvstorage
 
-import "github.com/cockroachdb/cockroach/pkg/storage"
+import (
+	"github.com/cockroachdb/cockroach/pkg/storage"
+	"github.com/cockroachdb/cockroach/pkg/util/buildutil"
+	"github.com/cockroachdb/cockroach/pkg/util/envutil"
+)
+
+// EnableSepStorage controls whether the separated storage is enabled. This is
+// an experimental feature that can be true only in test builds for now.
+var EnableSepStorage = envutil.EnvOrDefaultBool(
+	"COCKROACH_ENABLE_SEPARATED_STORAGE", false,
+) && buildutil.CrdbTestBuild
 
 // Engine encapsulates the KV storage engine that allows accessing the state
 // machine and raft state. It supports both combined and logically/physically
@@ -19,14 +29,10 @@ type Engine struct {
 
 // MakeEngine returns an instance of Engine.
 func MakeEngine(state, raft storage.Engine) Engine {
-	if state != raft {
+	if !EnableSepStorage && state != raft {
 		panic("engines must be the same")
 	}
-	return Engine{state: state, raft: raft}
-}
-
-func MakeSepEngine(state, raft storage.Engine) Engine {
-	return Engine{state: state, raft: raft, isSep: true}
+	return Engine{state: state, raft: raft, isSep: EnableSepStorage}
 }
 
 // NewBatch creates a new write batch. By default, the batch only accepts

@@ -25,6 +25,7 @@ go_library(
         "//pkg/storage",
         "//pkg/storage/enginepb",
         "//pkg/util/buildutil",
+        "//pkg/util/envutil",
         "//pkg/util/hlc",
         "//pkg/util/iterutil",
         "//pkg/util/log",
