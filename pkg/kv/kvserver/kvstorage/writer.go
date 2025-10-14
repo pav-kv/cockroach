@@ -20,11 +20,6 @@ import (
 	"github.com/cockroachdb/errors"
 )
 
-type Engines struct {
-	se storage.Engine // state machine engine
-	le storage.Engine // log engine
-}
-
 type DualBatch struct {
 	sm   storage.WriteBatch
 	raft storage.WriteBatch

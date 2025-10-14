@@ -157,17 +157,6 @@ func DestroyReplica(
 	})
 }
 
-type StoreBatch struct {
-	RState storage.Reader
-	WState storage.Writer
-	RRaft  storage.Reader
-	WRaft  storage.Writer
-}
-
-func (s *StoreBatch) Separated() bool {
-	return s.WState != s.WRaft
-}
-
 // DestroyReplicaInfo contains the replica's metadata needed for its removal
 // from storage.
 // FIXME: use the same in prepareSnapApply.
