@@ -87,6 +87,7 @@ func TestDestroyReplicaSep(t *testing.T) {
 	storage.DisableMetamorphicSimpleValueEncoding(t) // for deterministic output
 	eng := storage.NewDefaultInMemForTesting()
 	defer eng.Close()
+	e := SeparatedEngine{state: eng, raft: eng}
 
 	var sb redact.StringBuilder
 	ctx := context.Background()
@@ -100,25 +101,24 @@ func TestDestroyReplicaSep(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, b.Commit(false))
 	}
-	mutateSep := func(name string, write func(state, raft storage.ReadWriter)) {
-		stateBatch := eng.NewBatch()
-		defer stateBatch.Close()
-		raftBatch := eng.NewBatch()
-		defer raftBatch.Close()
-		write(stateBatch, raftBatch)
+	mutateSep := func(name string, write func(batch Batch)) {
+		batch := e.NewBatch()
+		e.AddRaft(&batch)
+		defer batch.Close()
+		write(batch)
 
-		str, err := print.DecodeWriteBatch(raftBatch.Repr())
+		str, err := print.DecodeWriteBatch(batch.raft.Repr())
 		require.NoError(t, err)
 		_, err = sb.WriteString(fmt.Sprintf(">> %s (raft):\n%s", name, str))
 		require.NoError(t, err)
 
-		str, err = print.DecodeWriteBatch(stateBatch.Repr())
+		str, err = print.DecodeWriteBatch(batch.state.Repr())
 		require.NoError(t, err)
 		_, err = sb.WriteString(fmt.Sprintf(">> %s (state):\n%s", name, str))
 		require.NoError(t, err)
 
-		require.NoError(t, raftBatch.Commit(true))
-		require.NoError(t, stateBatch.Commit(false))
+		require.NoError(t, batch.raft.Commit(true))
+		require.NoError(t, batch.state.Commit(false))
 	}
 
 	r := replicaInfo{
@@ -135,13 +135,11 @@ func TestDestroyReplicaSep(t *testing.T) {
 	mutate("state", func(rw storage.ReadWriter) {
 		r.createStateMachine(ctx, t, rw)
 	})
-	mutateSep("destroy", func(state, raft storage.ReadWriter) {
+	mutateSep("destroy", func(batch Batch) {
 		require.NoError(t, DestroyReplicaSep(ctx, DestroyReplicaInfo{
 			ID: r.id, Keys: r.keys,
 			Log: kvpb.RaftSpan{After: r.ts.Index, Last: r.applied},
-		}, StoreBatch{
-			RState: state, WState: state, RRaft: raft, WRaft: raft,
-		}, r.id.ReplicaID+1, ClearRangeDataOptions{
+		}, batch, r.id.ReplicaID+1, ClearRangeDataOptions{
 			ClearUnreplicatedByRangeID: true,
 			ClearReplicatedByRangeID:   true,
 			ClearReplicatedBySpan:      r.keys,
