@@ -18,7 +18,7 @@ import (
 
 type WAGBuilder struct {
 	eng   *Engine
-	batch Batch
+	Batch Batch
 
 	addr   wagpb.Addr
 	event  wagpb.ReplicaEvent
@@ -26,7 +26,7 @@ type WAGBuilder struct {
 }
 
 func (e *Engine) MakeWAGBuilder() WAGBuilder {
-	return WAGBuilder{eng: e, batch: e.NewBatch()}
+	return WAGBuilder{eng: e, Batch: e.NewBatch()}
 }
 
 // CreateUninitialized creates an uninitialized replica in storage.
@@ -56,7 +56,7 @@ func (w *WAGBuilder) CreateUninitialized(ctx context.Context, id roachpb.FullRep
 	// non-existent. The only RangeID-specific key that can be present is the
 	// RangeTombstone inspected above.
 	_ = CreateUninitReplicaTODO
-	if err := sl.SetRaftReplicaID(ctx, w.batch.state, id.ReplicaID); err != nil {
+	if err := sl.SetRaftReplicaID(ctx, w.Batch.state, id.ReplicaID); err != nil {
 		return err
 	}
 	// TODO(pav-kv): make sure that storage invariants for this uninitialized
@@ -66,24 +66,24 @@ func (w *WAGBuilder) CreateUninitialized(ctx context.Context, id roachpb.FullRep
 
 func (w *WAGBuilder) Commit(sync bool) error {
 	if !w.eng.isSep {
-		return w.batch.state.Commit(sync)
+		return w.Batch.state.Commit(sync)
 	}
-	w.eng.AddRaft(&w.batch)
-	if err := wag.Write(w.batch.raft, w.eng.seq.Next(1), wagpb.Node{
+	w.eng.AddRaft(&w.Batch)
+	if err := wag.Write(w.Batch.raft, w.eng.seq.Next(1), wagpb.Node{
 		Addr:     w.addr,
-		Mutation: wagpb.Mutation{Batch: w.batch.state.Repr()},
+		Mutation: wagpb.Mutation{Batch: w.Batch.state.Repr()},
 		Event:    w.event,
 		Events:   w.events,
 	}); err != nil {
 		return errors.Wrapf(err, "wailed to write WAG node")
 	}
-	if err := w.batch.raft.Commit(true /* sync */); err != nil {
+	if err := w.Batch.raft.Commit(true /* sync */); err != nil {
 		return errors.Wrap(err, "wailed to commit WAG node")
 	}
-	return w.batch.state.Commit(false /* sync */)
+	return w.Batch.state.Commit(false /* sync */)
 }
 
 func (w *WAGBuilder) Close() {
-	w.batch.Close()
+	w.Batch.Close()
 	*w = WAGBuilder{}
 }

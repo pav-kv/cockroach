@@ -36,8 +36,8 @@ type replicaAppBatch struct {
 	r          *Replica
 	applyStats *applyCommittedEntriesStats
 
-	// batch accumulates writes implied by the raft entries in this batch.
-	batch kvstorage.Batch
+	// builder accumulates writes implied by the raft entries in this batch.
+	builder kvstorage.WAGBuilder
 	// state is this batch's view of the replica's state. It is copied from
 	// under the Replica.mu when the batch is initialized and is updated in
 	// stageTrivialReplicatedEvalResult.
@@ -136,7 +136,7 @@ func (b *replicaAppBatch) Stage(
 	}
 
 	// Stage the command's write batch in the application batch.
-	if err := b.ab.addWriteBatch(ctx, b.batch.TODO(), cmd); err != nil {
+	if err := b.ab.addWriteBatch(ctx, b.builder.Batch.TODO(), cmd); err != nil {
 		return nil, err
 	}
 
@@ -200,7 +200,7 @@ func (b *replicaAppBatch) runPreAddTriggersReplicaOnly(
 		// application there are no listening rangefeeds. So we do this only
 		// in Replica application.
 		if p, filter := b.r.getRangefeedProcessorAndFilter(); p != nil {
-			if err := populatePrevValsInLogicalOpLog(ctx, filter, ops, b.batch.TODO()); err != nil {
+			if err := populatePrevValsInLogicalOpLog(ctx, filter, ops, b.builder.Batch.TODO()); err != nil {
 				b.r.disconnectRangefeedWithErr(p, kvpb.NewError(err))
 			}
 		}
@@ -317,7 +317,7 @@ func (b *replicaAppBatch) runPostAddTriggersReplicaOnly(
 		//
 		// Alternatively if we discover that the RHS has already been removed
 		// from this store, clean up its data.
-		splitPreApply(ctx, b.r, b.batch.TODO(), res.Split.SplitTrigger, cmd.Cmd.ClosedTimestamp)
+		splitPreApply(ctx, b.r, b.builder.Batch.TODO(), res.Split.SplitTrigger, cmd.Cmd.ClosedTimestamp)
 
 		// The rangefeed processor will no longer be provided logical ops for
 		// its entire range, so it needs to be shut down and all registrations
@@ -364,7 +364,7 @@ func (b *replicaAppBatch) runPostAddTriggersReplicaOnly(
 		// no new replicas of the RHS can ever be created, but it doesn't hurt to
 		// be careful.
 		if err := kvstorage.DestroyReplica(
-			ctx, b.batch.TODO(), b.batch.TODO(),
+			ctx, b.builder.Batch.TODO(), b.builder.Batch.TODO(),
 			rhsRepl.destroyInfoRaftMuLocked(),
 			mergedTombstoneReplicaID,
 			kvstorage.ClearRangeDataOptions{
@@ -460,7 +460,7 @@ func (b *replicaAppBatch) runPostAddTriggersReplicaOnly(
 		// above, and DestroyReplica will also add a range tombstone to the
 		// batch, so that when we commit it, the removal is finalized.
 		if err := kvstorage.DestroyReplica(
-			ctx, b.batch.TODO(), b.batch.TODO(),
+			ctx, b.builder.Batch.TODO(), b.builder.Batch.TODO(),
 			b.r.destroyInfoRaftMuLocked(),
 			change.NextReplicaID(),
 			kvstorage.ClearRangeDataOptions{
@@ -481,7 +481,7 @@ func (b *replicaAppBatch) runPostAddTriggersReplicaOnly(
 	// shutdown of the rangefeed in that situation, so we don't pass anything to
 	// the rangefeed. If no rangefeed is running at all, this call will be a noop.
 	if ops := cmd.Cmd.LogicalOpLog; cmd.Cmd.WriteBatch != nil {
-		b.r.handleLogicalOpLogRaftMuLocked(ctx, ops, b.batch.TODO())
+		b.r.handleLogicalOpLogRaftMuLocked(ctx, ops, b.builder.Batch.TODO())
 	} else if ops != nil {
 		log.KvExec.Fatalf(ctx, "non-nil logical op log with nil write batch: %v", cmd.Cmd)
 	}
@@ -522,7 +522,7 @@ func (b *replicaAppBatch) stageTruncation(
 	// into the batch, and compute metadata used after applying it.
 	if err := handleTruncatedStateBelowRaftPreApply(
 		ctx, b.truncState, *truncatedState,
-		b.r.raftMu.stateLoader.StateLoader, b.batch.TODO(),
+		b.r.raftMu.stateLoader.StateLoader, b.builder.Batch.TODO(),
 	); err != nil {
 		return errors.Wrap(err, "unable to handle truncated state")
 	}
@@ -593,7 +593,8 @@ func (b *replicaAppBatch) stageTrivialReplicatedEvalResult(
 		// are all safe.
 		b.state.ForceFlushIndex = roachpb.ForceFlushIndex{Index: cmd.Entry.Index}
 		if err := b.r.raftMu.stateLoader.SetForceFlushIndex(
-			ctx, b.batch.TODO(), b.state.Stats, &b.state.ForceFlushIndex); err != nil {
+			ctx, b.builder.Batch.TODO(), b.state.Stats, &b.state.ForceFlushIndex,
+		); err != nil {
 			return err
 		}
 	}
@@ -645,10 +646,10 @@ func (b *replicaAppBatch) ApplyToStateMachine(ctx context.Context) error {
 	// application of this command. I.e. the loosely coupled truncation migration
 	// mentioned above likely needs to be done first.
 	sync := b.changeRemovesReplica || b.changeTruncatesSideloadedFiles
-	if err := b.batch.TODO().Commit(sync); err != nil {
+	if err := b.builder.Batch.TODO().Commit(sync); err != nil {
 		return errors.Wrapf(err, "unable to commit Raft entry batch")
 	}
-	b.batch.Close()
+	b.builder.Close()
 
 	// Update the replica's applied indexes, mvcc stats and closed timestamp.
 	r := b.r
@@ -724,7 +725,8 @@ func (b *replicaAppBatch) addAppliedStateKeyToBatch(ctx context.Context) error {
 	// lease index along with the mvcc stats, all in one key.
 	loader := &b.r.raftMu.stateLoader
 	return loader.SetRangeAppliedState(
-		ctx, b.batch.TODO(), b.state.RaftAppliedIndex, b.state.LeaseAppliedIndex, b.state.RaftAppliedIndexTerm,
+		ctx, b.builder.Batch.TODO(), b.state.RaftAppliedIndex,
+		b.state.LeaseAppliedIndex, b.state.RaftAppliedIndexTerm,
 		b.state.Stats, b.state.RaftClosedTimestamp, &b.asAlloc,
 	)
 }
@@ -748,7 +750,7 @@ func (b *replicaAppBatch) recordStatsOnCommit() {
 
 // Close implements the apply.Batch interface.
 func (b *replicaAppBatch) Close() {
-	b.batch.Close()
+	b.builder.Close()
 	*b = replicaAppBatch{}
 }
 
