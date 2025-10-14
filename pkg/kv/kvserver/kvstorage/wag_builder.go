@@ -122,6 +122,7 @@ func (w *WAGBuilder) Destroy(
 	}
 
 	if opts.ClearUnreplicatedByRangeID {
+		w.eng.AddRaft(&w.Batch)
 		// TODO(pav-kv): make this clearing future proof. Right now, we manually
 		// handle each possible key.
 

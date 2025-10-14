@@ -70,8 +70,11 @@ func TestDestroyReplica(t *testing.T) {
 	mutate("destroy", func(rw storage.ReadWriter) {
 		require.NoError(t, DestroyReplica(
 			ctx, rw, rw,
-			DestroyReplicaInfo{FullReplicaID: r.id, Keys: r.keys}, r.id.ReplicaID+1,
-			ClearRangeDataOptions{
+			DestroyReplicaInfo{
+				FullReplicaID: r.id,
+				Keys:          r.keys,
+				Log:           kvpb.RaftSpan{After: r.ts.Index, Last: r.applied},
+			}, r.id.ReplicaID+1, ClearRangeDataOptions{
 				ClearUnreplicatedByRangeID: true,
 				ClearReplicatedByRangeID:   true,
 				ClearReplicatedBySpan:      r.keys,
