@@ -18,6 +18,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage"
 	"github.com/cockroachdb/errors"
+	"github.com/cockroachdb/pebble"
 )
 
 type WAGBuilder struct {
@@ -200,7 +201,49 @@ func (w *WAGBuilder) Commit(sync bool) error {
 	return w.Batch.state.Commit(false /* sync */)
 }
 
+func (w *WAGBuilder) Ingest(snap InSnap) error {
+	_ = wagpb.Mutation{Ingestion: &wagpb.Ingestion{
+		SSTs:           snap.SSTs,
+		SharedTables:   snap.SharedSSTs,
+		ExternalTables: snap.ExternalSSTs,
+	}}
+
+	w.eng.state.IngestAndExciseFiles()
+
+	var ingestStats pebble.IngestOperationStats
+	var writeBytes uint64
+	if applyAsIngest {
+		_ = applySnapshotTODO // all atomic
+		exciseSpan := desc.KeySpan().AsRawSpanWithNoLocals()
+		if ingestStats, err = r.store.TODOEngine().IngestAndExciseFiles(ctx, inSnap.SSTStorageScratch.SSTs(), inSnap.sharedSSTs, inSnap.externalSSTs, exciseSpan); err != nil {
+			return errors.Wrapf(err, "while ingesting %s and excising %s-%s",
+				inSnap.SSTStorageScratch.SSTs(), exciseSpan.Key, exciseSpan.EndKey)
+		}
+	} else {
+		_ = applySnapshotTODO // all atomic
+		err := r.store.TODOEngine().ConvertFilesToBatchAndCommit(
+			ctx, inSnap.SSTStorageScratch.SSTs(), sb.cleared)
+		if err != nil {
+			return errors.Wrapf(err, "while applying as batch %s", inSnap.SSTStorageScratch.SSTs())
+		}
+		// Admission control wants the writeBytes to be roughly equivalent to
+		// the bytes in the SST when these writes are eventually flushed. We use
+		// the SST size of the incoming snapshot as that approximation. We've
+		// written additional SSTs to clear some data earlier in this method,
+		// but we ignore those since the bulk of the data is in the incoming
+		// snapshot.
+		writeBytes = uint64(inSnap.SSTSize)
+	}
+
+}
+
 func (w *WAGBuilder) Close() {
 	w.Batch.Close()
 	*w = WAGBuilder{}
+}
+
+type InSnap struct {
+	SSTs         []string
+	SharedSSTs   []kvserverpb.SnapshotRequest_SharedTable
+	ExternalSSTs []kvserverpb.SnapshotRequest_ExternalTable
 }
