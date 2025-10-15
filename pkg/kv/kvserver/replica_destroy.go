@@ -111,7 +111,7 @@ func (r *Replica) destroyRaftMuLocked(ctx context.Context, nextReplicaID roachpb
 		ClearUnreplicatedByRangeID: true,
 	}
 	if err := builder.Destroy(
-		ctx, r.destroyInfoRaftMuLocked(), opts,
+		ctx, r.destroyInfoRaftMuLocked(), nextReplicaID, opts,
 	); err != nil {
 		return err
 	}

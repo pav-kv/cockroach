@@ -18,7 +18,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage"
 	"github.com/cockroachdb/errors"
-	"github.com/cockroachdb/pebble"
 )
 
 type WAGBuilder struct {
@@ -201,6 +200,7 @@ func (w *WAGBuilder) Commit(sync bool) error {
 	return w.Batch.state.Commit(false /* sync */)
 }
 
+/*
 func (w *WAGBuilder) Ingest(snap InSnap) error {
 	_ = wagpb.Mutation{Ingestion: &wagpb.Ingestion{
 		SSTs:           snap.SSTs,
@@ -234,8 +234,8 @@ func (w *WAGBuilder) Ingest(snap InSnap) error {
 		// snapshot.
 		writeBytes = uint64(inSnap.SSTSize)
 	}
-
 }
+*/
 
 func (w *WAGBuilder) Close() {
 	w.Batch.Close()
