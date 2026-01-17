@@ -90,7 +90,7 @@ func (r *Replica) MaybeGossipNodeLivenessRaftMuLocked(
 		kvpb.AdmissionHeader{},
 	)
 	defer rec.Release()
-	rw := r.store.TODOEngine().NewReadOnly(storage.StandardDurability)
+	rw := r.store.StateEngine().NewReadOnly(storage.StandardDurability) // FIXME: is this right?
 	defer rw.Close()
 
 	br, result, pErr :=
