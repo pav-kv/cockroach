@@ -809,6 +809,9 @@ func (cfg *Config) CreateEngines(ctx context.Context) (Engines, error) {
 		// TODO(#97610): make these configurable.
 		var storageConfigOpts []storage.ConfigOption
 		var logStorageConfigOpts []storage.ConfigOption
+		addStateOpt := func(opt ...storage.ConfigOption) {
+			storageConfigOpts = append(storageConfigOpts, opt...)
+		}
 		addCfgOpt := func(opt ...storage.ConfigOption) {
 			storageConfigOpts = append(storageConfigOpts, opt...)
 			logStorageConfigOpts = append(logStorageConfigOpts, opt...)
@@ -903,6 +906,12 @@ func (cfg *Config) CreateEngines(ctx context.Context) (Engines, error) {
 				}))
 			}
 		}
+		const logEngEnvVar = "COCKROACH_LOG_ENGINE_PATH_UNSAFE"
+		logEngPath := envutil.EnvOrDefaultString(logEngEnvVar, "")
+		enabled := logEngPath != ""
+		if enabled {
+			addStateOpt(storage.DisableWAL())
+		}
 
 		eng, err := storage.Open(ctx, storeEnvs[i], cfg.Settings, storageConfigOpts...)
 		if err != nil {
@@ -910,8 +919,7 @@ func (cfg *Config) CreateEngines(ctx context.Context) (Engines, error) {
 		}
 		detail(redact.Sprintf("store %d: %s", i, eng.Properties()))
 
-		const logEngEnvVar = "COCKROACH_LOG_ENGINE_PATH_UNSAFE"
-		if logEngPath := envutil.EnvOrDefaultString(logEngEnvVar, ""); logEngPath != "" {
+		if enabled {
 			if len(cfg.Stores.Specs) != 1 {
 				panic("separate engines not supported for multi-store") // TODO(sep-raft-log): support
 			}
