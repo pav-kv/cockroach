@@ -1116,7 +1116,7 @@ func (nl *NodeLiveness) verifyDiskHealth(ctx context.Context) error {
 				InheritCancelation: false,
 			},
 			func(ctx context.Context) (interface{}, error) {
-				return nil, diskStorage.WriteSyncNoop(eng.TODOEngine())
+				return nil, diskStorage.WriteSyncNoop(eng.LogEngine()) // FIXME: sounds right?
 			})
 	}
 	for _, resultC := range resultCs {
