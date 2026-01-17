@@ -262,7 +262,7 @@ func (ds *Server) RegisterEngines(engines []kvstorage.Engines) error {
 	})
 
 	for _, eng := range engines {
-		dir := eng.TODOEngine().Env().Dir
+		dir := eng.StateEngine().Env().Dir // FIXME: what about LogEngine?
 		if dir == "" {
 			// TODO(yevgeniy): Add plumbing to support LSM visualization for in memory engines.
 			continue
