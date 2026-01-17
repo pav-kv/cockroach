@@ -233,11 +233,11 @@ func (ds *Server) RegisterWorkloadCollector(stores *kvserver.Stores) error {
 func GetLSMStats(engines []kvstorage.Engines) (map[roachpb.StoreID]string, error) {
 	stats := make(map[roachpb.StoreID]string, len(engines))
 	for _, eng := range engines {
-		storeID, err := eng.TODOEngine().GetStoreID()
+		storeID, err := eng.StateEngine().GetStoreID()
 		if err != nil {
 			return nil, err
 		}
-		stats[roachpb.StoreID(storeID)] = eng.TODOEngine().GetMetrics().String()
+		stats[roachpb.StoreID(storeID)] = eng.StateEngine().GetMetrics().String()
 	}
 	return stats, nil
 }
@@ -268,7 +268,7 @@ func (ds *Server) RegisterEngines(engines []kvstorage.Engines) error {
 			continue
 		}
 
-		storeID, err := eng.TODOEngine().GetStoreID()
+		storeID, err := eng.StateEngine().GetStoreID()
 		if err != nil {
 			return err
 		}
@@ -293,7 +293,7 @@ func (ds *Server) RegisterEngines(engines []kvstorage.Engines) error {
 				ctx := req.Context()
 				ctx, cancel := context.WithTimeout(ctx, dur)
 				defer cancel()
-				profile, err := eng.TODOEngine().ProfileSeparatedValueRetrievals(ctx)
+				profile, err := eng.StateEngine().ProfileSeparatedValueRetrievals(ctx)
 				if err != nil {
 					http.Error(w, "error profiling separated value retrievals", http.StatusInternalServerError)
 					return
