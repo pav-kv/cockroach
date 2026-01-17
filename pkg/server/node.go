@@ -543,8 +543,7 @@ func bootstrapCluster(
 				storeKnobs = *kn
 			}
 			if err := kvserver.WriteInitialClusterData(
-				ctx, eng.TODOEngine(), initialValues,
-				bootstrapVersion.Version, len(engines), splits,
+				ctx, eng, initialValues, bootstrapVersion.Version, len(engines), splits,
 				timeutil.Now().UnixNano(), storeKnobs,
 			); err != nil {
 				return nil, err

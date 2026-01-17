@@ -39,7 +39,7 @@ import (
 // nowNanos: the timestamp at which to write the initial engine data.
 func WriteInitialClusterData(
 	ctx context.Context,
-	eng storage.Engine,
+	eng kvstorage.Engines,
 	initialValues []roachpb.KeyValue,
 	bootstrapVersion roachpb.Version,
 	numStores int,
@@ -156,6 +156,7 @@ func WriteInitialClusterData(
 		err := func() error {
 			batch := eng.NewBatch()
 			defer batch.Close()
+			stateRW, raftRW := batch.RW()
 
 			now := hlc.Timestamp{
 				WallTime: nowNanos,
@@ -168,14 +169,14 @@ func WriteInitialClusterData(
 			// If requested, write an MVCC range tombstone at the bottom of the
 			// keyspace, for performance and correctness testing.
 			if knobs.GlobalMVCCRangeTombstone {
-				if err := writeGlobalMVCCRangeTombstone(ctx, batch, desc, now.Prev()); err != nil {
+				if err := writeGlobalMVCCRangeTombstone(ctx, stateRW, desc, now.Prev()); err != nil {
 					return err
 				}
 			}
 
 			// Range descriptor.
 			if err := storage.MVCCPutProto(
-				ctx, batch, keys.RangeDescriptorKey(desc.StartKey),
+				ctx, stateRW, keys.RangeDescriptorKey(desc.StartKey),
 				now, desc, storage.MVCCWriteOptions{},
 			); err != nil {
 				return err
@@ -183,7 +184,7 @@ func WriteInitialClusterData(
 
 			// Replica GC timestamp.
 			if err := storage.MVCCPutProto(
-				ctx, batch, keys.RangeLastReplicaGCTimestampKey(desc.RangeID),
+				ctx, raftRW, keys.RangeLastReplicaGCTimestampKey(desc.RangeID),
 				hlc.Timestamp{}, &now, storage.MVCCWriteOptions{},
 			); err != nil {
 				return err
@@ -197,7 +198,7 @@ func WriteInitialClusterData(
 			// should improve the performance in workloads that cause many range
 			// splits by delaying the consistency checker.
 			if err := storage.MVCCPutProto(
-				ctx, batch, keys.QueueLastProcessedKey(desc.StartKey, "consistencyChecker"),
+				ctx, stateRW, keys.QueueLastProcessedKey(desc.StartKey, "consistencyChecker"),
 				hlc.Timestamp{}, &now, storage.MVCCWriteOptions{},
 			); err != nil {
 				return err
@@ -210,7 +211,7 @@ func WriteInitialClusterData(
 			// liveness.
 			metaKey := keys.RangeMetaKey(endKey)
 			if err := storage.MVCCPutProto(
-				ctx, batch, metaKey.AsRawKey(),
+				ctx, stateRW, metaKey.AsRawKey(),
 				now, desc, storage.MVCCWriteOptions{Stats: meta2RangeMS},
 			); err != nil {
 				return err
@@ -226,7 +227,7 @@ func WriteInitialClusterData(
 				// The range descriptor is stored in meta1.
 				meta1Key := keys.RangeMetaKey(keys.RangeMetaKey(roachpb.RKeyMax)) // range addressing for meta1
 				if err := storage.MVCCPutProto(
-					ctx, batch, meta1Key.AsRawKey(), now, desc, storage.MVCCWriteOptions{},
+					ctx, stateRW, meta1Key.AsRawKey(), now, desc, storage.MVCCWriteOptions{},
 				); err != nil {
 					return err
 				}
@@ -237,29 +238,32 @@ func WriteInitialClusterData(
 				// Initialize the checksums.
 				kv.Value.InitChecksum(kv.Key)
 				if _, err := storage.MVCCPut(
-					ctx, batch, kv.Key, now, kv.Value, storage.MVCCWriteOptions{},
+					ctx, stateRW, kv.Key, now, kv.Value, storage.MVCCWriteOptions{},
 				); err != nil {
 					return err
 				}
 			}
 
 			if err := kvstorage.WriteInitialRangeState(
-				ctx, batch, batch,
+				ctx, stateRW, raftRW,
 				*desc, firstReplicaID, initialReplicaVersion,
 			); err != nil {
 				return err
 			}
-			computedStats, err := rditer.ComputeStatsForRange(ctx, desc, batch, fs.UnknownReadCategory, now.WallTime)
+			// TODO(sep-raft-log): the computed stats much be reflected in the WAG
+			// node written in WriteInitialRangeState, before the write is committed.
+			// Decompose WriteInitialRangeState to make it possible.
+			computedStats, err := rditer.ComputeStatsForRange(ctx, desc, stateRW, fs.UnknownReadCategory, now.WallTime)
 			if err != nil {
 				return err
 			}
 
 			sl := kvstorage.MakeStateLoader(rangeID)
-			if err := sl.SetMVCCStats(ctx, batch, &computedStats); err != nil {
+			if err := sl.SetMVCCStats(ctx, stateRW, &computedStats); err != nil {
 				return err
 			}
 
-			return batch.Commit(true /* sync */)
+			return batch.CommitAndSync()
 		}()
 		if err != nil {
 			return err
