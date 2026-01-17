@@ -377,7 +377,10 @@ func (b *replicaAppBatch) runPostAddTriggersReplicaOnly(
 		rhsRepl.readOnlyCmdMu.Unlock()
 
 		if err := kvstorage.SubsumeReplica(
-			ctx, kvstorage.TODOReadWriter(b.batch), rhsRepl.destroyInfoRaftMuLocked(),
+			ctx, kvstorage.ReadWriter{
+				State: kvstorage.State{RO: b.batch, WO: b.batch},
+				Raft:  kvstorage.Raft{RO: b.RaftBatch(), WO: b.RaftBatch()},
+			}, rhsRepl.destroyInfoRaftMuLocked(),
 		); err != nil {
 			return errors.Wrapf(err, "unable to subsume replica before merge")
 		}
@@ -466,8 +469,10 @@ func (b *replicaAppBatch) runPostAddTriggersReplicaOnly(
 		// above, and DestroyReplica will also add a range tombstone to the
 		// batch, so that when we commit it, the removal is finalized.
 		if err := kvstorage.DestroyReplica(
-			ctx, kvstorage.TODOReadWriter(b.batch),
-			b.r.destroyInfoRaftMuLocked(), change.NextReplicaID(),
+			ctx, kvstorage.ReadWriter{
+				State: kvstorage.State{RO: b.batch, WO: b.batch},
+				Raft:  kvstorage.Raft{RO: b.RaftBatch(), WO: b.RaftBatch()},
+			}, b.r.destroyInfoRaftMuLocked(), change.NextReplicaID(),
 		); err != nil {
 			return errors.Wrapf(err, "unable to destroy replica before removal")
 		}
