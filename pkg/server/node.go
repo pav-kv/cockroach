@@ -1368,7 +1368,7 @@ func (pmp *nodePebbleMetricsProvider) GetPebbleMetrics() []admission.StoreMetric
 	}
 	var metrics []admission.StoreMetrics
 	_ = pmp.n.stores.VisitStores(func(store *kvserver.Store) error {
-		eng := store.TODOEngine()
+		eng := store.StateEngine() // FIXME: what about LogEngine?
 		m := eng.GetMetrics()
 		opts := eng.GetPebbleOptions()
 		memTableSizeForStopWrites := opts.MemTableSize * uint64(opts.MemTableStopWritesThreshold)
