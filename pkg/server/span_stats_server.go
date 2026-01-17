@@ -230,7 +230,8 @@ func (s *systemStatusServer) statsForSpan(
 
 	// First, get the approximate disk bytes from each store.
 	err = s.stores.VisitStores(func(store *kvserver.Store) error {
-		approxDiskBytes, remoteBytes, externalBytes, err := store.TODOEngine().ApproximateDiskBytes(rSpan.Key.AsRawKey(), rSpan.EndKey.AsRawKey())
+		// FIXME: LogEngine?
+		approxDiskBytes, remoteBytes, externalBytes, err := store.StateEngine().ApproximateDiskBytes(rSpan.Key.AsRawKey(), rSpan.EndKey.AsRawKey())
 		if err != nil {
 			return err
 		}
@@ -314,7 +315,7 @@ func (s *systemStatusServer) statsForSpan(
 			err = s.stores.VisitStores(func(s *kvserver.Store) error {
 				stats, err := storage.ComputeStats(
 					ctx,
-					s.TODOEngine(),
+					s.StateEngine(), // FIXME: LogEngine?
 					fs.UnknownReadCategory,
 					scanStart.AsRawKey(),
 					scanEnd.AsRawKey(),

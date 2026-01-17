@@ -4050,7 +4050,7 @@ func (s *systemStatusServer) Stores(
 
 	resp := &serverpb.StoresResponse{}
 	err = s.stores.VisitStores(func(store *kvserver.Store) error {
-		eng := store.TODOEngine()
+		eng := store.StateEngine() // FIXME: LogEngine?
 		envStats, err := eng.GetEnvStats()
 		if err != nil {
 			return err

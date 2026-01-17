@@ -3348,7 +3348,7 @@ func (r *Replica) followerSendSnapshot(
 		RangeKeysInOrder:    true,
 	}
 	newBatchFn := func() storage.WriteBatch {
-		return r.store.TODOEngine().NewWriteBatch()
+		return r.store.StateEngine().NewWriteBatch()
 	}
 	sent := func() {
 		r.store.metrics.RangeSnapshotsGenerated.Inc(1)

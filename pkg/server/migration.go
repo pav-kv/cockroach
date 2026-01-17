@@ -166,7 +166,7 @@ func (m *migrationServer) SyncAllEngines(
 		for _, eng := range m.server.engines {
 			// TODO(sep-raft-log): figure out whether StateEngine needs a sync, or we
 			// can only sync LogEngine here.
-			if err := storage.WriteSyncNoop(eng.TODOEngine()); err != nil {
+			if err := storage.WriteSyncNoop(eng.LogEngine()); err != nil {
 				return err
 			}
 		}

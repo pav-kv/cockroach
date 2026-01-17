@@ -57,7 +57,7 @@ func (h *HTTPHandler) HandleRequest(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		getter, ok := s.TODOEngine().(workloadCollectorGetter)
+		getter, ok := s.StateEngine().(workloadCollectorGetter) // FIXME: what about LogEngine?
 		if !ok {
 			http.Error(
 				w,

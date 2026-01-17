@@ -101,7 +101,7 @@ func (is Server) WaitForApplication(
 				// everything up to this point to disk.
 				//
 				// https://github.com/cockroachdb/cockroach/issues/33120
-				return storage.WriteSyncNoop(s.TODOEngine())
+				return storage.WriteSyncNoop(s.LogEngine()) // FIXME: StateEngine?
 			}
 		}
 		if ctx.Err() == nil {
@@ -158,7 +158,7 @@ func (is Server) GetTableMetrics(
 	resp := &GetTableMetricsResponse{}
 	err := is.execStoreCommand(ctx, req.StoreRequestHeader,
 		func(ctx context.Context, s *Store) error {
-			metricsInfo, err := s.TODOEngine().GetTableMetrics(req.Span.Key, req.Span.EndKey)
+			metricsInfo, err := s.StateEngine().GetTableMetrics(req.Span.Key, req.Span.EndKey) // FIXME: sounds right?
 
 			if err != nil {
 				return err

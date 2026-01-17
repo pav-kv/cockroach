@@ -1901,7 +1901,7 @@ func (tc *TestCluster) ReadIntFromStores(key roachpb.Key) []int64 {
 		sl := server.StorageLayer()
 		clock := server.SystemLayer().Clock()
 		err := sl.GetStores().(*kvserver.Stores).VisitStores(func(s *kvserver.Store) error {
-			valRes, err := storage.MVCCGet(context.Background(), s.TODOEngine(), key,
+			valRes, err := storage.MVCCGet(context.Background(), s.StateEngine(), key,
 				clock.Now(), storage.MVCCGetOptions{})
 			if err != nil {
 				log.VEventf(context.Background(), 1, "store %d: error reading from key %s: %s", s.StoreID(), key, err)
