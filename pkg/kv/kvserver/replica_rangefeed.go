@@ -514,7 +514,8 @@ func (r *Replica) registerWithRangefeedRaftMuLocked(
 		// synchronizes with the rangefeed Processor calling this function by
 		// waiting for the Register call below to return.
 		r.raftMu.AssertHeld()
-		return rangefeed.NewSeparatedIntentScanner(streamCtx, r.store.TODOEngine(), desc.RSpan())
+		// FIXME: is this right?
+		return rangefeed.NewSeparatedIntentScanner(streamCtx, r.store.StateEngine(), desc.RSpan())
 	}
 
 	// NB: This only errors if the stopper is stopping, and we have to return here
