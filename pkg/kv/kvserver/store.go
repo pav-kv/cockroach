@@ -2296,7 +2296,7 @@ func (s *Store) Start(ctx context.Context, stopper *stop.Stopper) error {
 	//
 	// TODO(sep-raft-log): this will need to learn to stitch and reconcile data from
 	// both engines.
-	repls, err := kvstorage.LoadAndReconcileReplicas(ctx, s.TODOEngine())
+	repls, err := kvstorage.LoadAndReconcileReplicas(ctx, s.internalEngines)
 	if err != nil {
 		return err
 	}
