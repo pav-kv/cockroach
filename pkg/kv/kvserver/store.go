@@ -3109,13 +3109,13 @@ func (s *Store) AllocateRangeID(ctx context.Context) (roachpb.RangeID, error) {
 
 // Attrs returns the attributes of the underlying store.
 func (s *Store) Attrs() roachpb.Attributes {
-	return s.TODOEngine().Attrs()
+	return s.StateEngine().Attrs() // FIXME: which?
 }
 
 // Properties returns the properties of the underlying store.
 func (s *Store) Properties() roachpb.StoreProperties {
 	// TODO(sep-raft-log): see if this needs to exist for the logEngine too.
-	return s.TODOEngine().Properties()
+	return s.StateEngine().Properties()
 }
 
 // Capacity returns the capacity of the underlying storage engine. Note that
@@ -3130,7 +3130,8 @@ func (s *Store) Capacity(ctx context.Context, useCached bool) (roachpb.StoreCapa
 		}
 	}
 
-	capacity, err := s.TODOEngine().Capacity()
+	// FIXME: which engine(s)?
+	capacity, err := s.StateEngine().Capacity()
 	if err != nil {
 		return roachpb.StoreCapacity{}, err
 	}
@@ -3593,7 +3594,8 @@ func (s *Store) updateReplicationGauges(ctx context.Context) error {
 }
 
 func (s *Store) checkpointsDir() string {
-	return filepath.Join(s.TODOEngine().GetAuxiliaryDir(), "checkpoints")
+	// FIXME: what about log engine?
+	return filepath.Join(s.StateEngine().GetAuxiliaryDir(), "checkpoints")
 }
 
 // checkpointSpans returns key spans containing the given range. The spans may
@@ -3705,19 +3707,19 @@ func (s *Store) computeMetricsLocked(ctx context.Context) (m storage.Metrics, er
 	}
 
 	// Get the latest engine metrics.
-	m = s.TODOEngine().GetMetrics()
-	_ = s.TODOEngine() // TODO(sep-raft-log): log engine should also have metrics
+	m = s.StateEngine().GetMetrics()
+	_ = s.LogEngine() // TODO(sep-raft-log): log engine should also have metrics
 	s.metrics.updateEngineMetrics(m)
 
 	// Get engine Env stats.
-	envStats, err := s.TODOEngine().GetEnvStats()
+	envStats, err := s.StateEngine().GetEnvStats()
 	if err != nil {
 		return m, err
 	}
 	s.metrics.updateEnvStats(*envStats)
 
 	{
-		dirs, err := s.TODOEngine().Env().List(s.checkpointsDir())
+		dirs, err := s.StateEngine().Env().List(s.checkpointsDir())
 		if err != nil { // skip NotFound or any other error
 			dirs = nil
 		}
