@@ -6,7 +6,7 @@
 package mpsc
 
 import (
-	"slices"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -25,11 +25,19 @@ func TestQueue(t *testing.T) {
 	q.close()
 }
 
-func TestQueueWorkload(t *testing.T) {
-	q := NewQueue[uint64]()
+func BenchmarkQueue(b *testing.B) {
+	const values = 100000000
+	for _, w := range []int{1, 2, 4, 8, 16, 32} {
+		b.Run(fmt.Sprintf("%dx", w), func(b *testing.B) {
+			for b.Loop() {
+				benchOnce(w, values/w)
+			}
+		})
+	}
+}
 
-	const workers = 10
-	const values = 1000
+func benchOnce(workers, values int) {
+	q := NewQueue[uint64]()
 
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -42,17 +50,44 @@ func TestQueueWorkload(t *testing.T) {
 		})
 	}
 
-	got := make([]uint64, 0, workers*values)
-
-	for ack := uint64(0); len(got) < cap(got); {
-		next := q.get(ack)
-		got = append(got, next...)
-		ack = uint64(len(next))
+	var got int
+	for ack, mx := 0, workers*values; got < mx; {
+		ack = len(q.get(uint64(ack)))
+		got += ack
 	}
 	q.close()
+}
 
-	slices.Sort(got)
-	for i, x := range got {
-		require.Equal(t, uint64(i), x)
+func BenchmarkChan(b *testing.B) {
+	const values = 100000000
+	for _, w := range []int{1, 2, 4, 8, 16, 32} {
+		b.Run(fmt.Sprintf("%dx", w), func(b *testing.B) {
+			for b.Loop() {
+				benchOnce(w, values/w)
+			}
+		})
 	}
+}
+
+func benchOnceChan(workers, values int) {
+	q := make(chan uint64, 100000)
+
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	for w := range workers {
+		begin, end := w*values, (w+1)*values
+		wg.Go(func() {
+			for i := begin; i < end; i++ {
+				q <- uint64(i)
+			}
+		})
+	}
+
+	var got int
+	for mx := workers * values; got < mx; {
+		x := <-q
+		_ = x
+		got++
+	}
+	close(q)
 }
