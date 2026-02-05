@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "mpsc",
+    srcs = ["mpsc.go"],
+    importpath = "github.com/cockroachdb/cockroach/pkg/kv/kvserver/mpsc",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/util/buildutil",
+        "//pkg/util/syncutil",
+    ],
+)
+
+go_test(
+    name = "mpsc_test",
+    srcs = ["mpsc_test.go"],
+    embed = [":mpsc"],
+    deps = ["@com_github_stretchr_testify//require"],
+)
