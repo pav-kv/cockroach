@@ -30,17 +30,27 @@ func BenchmarkQueue(b *testing.B) {
 	for _, w := range []int{1, 2, 4, 8, 16, 32} {
 		b.Run(fmt.Sprintf("%dx", w), func(b *testing.B) {
 			for b.Loop() {
-				benchOnce(w, values/w)
+				benchOnce(w, values/w, false)
 			}
 		})
 	}
 }
 
-func benchOnce(workers, values int) {
+func BenchmarkQueueFast(b *testing.B) {
+	const values = 100000000
+	for _, w := range []int{1, 2, 4, 8, 16, 32} {
+		b.Run(fmt.Sprintf("%dx", w), func(b *testing.B) {
+			for b.Loop() {
+				benchOnce(w, values/w, true)
+			}
+		})
+	}
+}
+
+func benchOnce(workers, values int, wait bool) {
 	q := NewQueue[uint64]()
 
 	var wg sync.WaitGroup
-	defer wg.Wait()
 	for w := range workers {
 		begin, end := w*values, (w+1)*values
 		wg.Go(func() {
@@ -48,6 +58,11 @@ func benchOnce(workers, values int) {
 				q.put(uint64(i))
 			}
 		})
+	}
+	if wait {
+		wg.Wait()
+	} else {
+		defer wg.Wait()
 	}
 
 	var got int
@@ -63,7 +78,7 @@ func BenchmarkChan(b *testing.B) {
 	for _, w := range []int{1, 2, 4, 8, 16, 32} {
 		b.Run(fmt.Sprintf("%dx", w), func(b *testing.B) {
 			for b.Loop() {
-				benchOnce(w, values/w)
+				benchOnceChan(w, values/w)
 			}
 		})
 	}

@@ -41,7 +41,7 @@ func (q *Queue[T]) put(value T) bool {
 	head := q.head.Load()
 	for ok, doClose := head.put(value); !ok; ok, doClose = head.put(value) {
 		if doClose {
-			next := newChunk[T](sizePolicy(head.lenMask + 1))
+			next := newChunk[T](sizePolicy(head.lenMask + 1)) // TODO: sync.Pool
 			q.head.Store(next)
 			head.close(next)
 			head = next
