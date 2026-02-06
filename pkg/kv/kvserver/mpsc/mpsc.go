@@ -25,7 +25,7 @@ func NewQueue[T any]() *Queue[T] {
 	return q
 }
 
-func (q *Queue[T]) get(ack uint64) []T {
+func (q *Queue[T]) Get(ack uint64) []T {
 	if got := q.tail.get(ack); len(got) > 0 {
 		return got
 	}
@@ -37,7 +37,7 @@ func (q *Queue[T]) get(ack uint64) []T {
 	}
 }
 
-func (q *Queue[T]) put(value T) bool {
+func (q *Queue[T]) Put(value T) bool {
 	head := q.head.Load()
 	for ok, doClose := head.put(value); !ok; ok, doClose = head.put(value) {
 		if doClose {
@@ -52,7 +52,7 @@ func (q *Queue[T]) put(value T) bool {
 	return true
 }
 
-func (q *Queue[T]) close() {
+func (q *Queue[T]) Close() {
 	q.head.Load().close(nil)
 }
 

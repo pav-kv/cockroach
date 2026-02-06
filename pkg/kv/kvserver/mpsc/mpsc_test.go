@@ -15,14 +15,14 @@ import (
 
 func TestQueue(t *testing.T) {
 	q := NewQueue[uint64]()
-	q.put(100)
-	q.get(0)
-	require.Equal(t, []uint64{100}, q.get(0))
-	q.put(200)
-	q.put(300)
-	q.get(1)
-	require.Equal(t, []uint64{200, 300}, q.get(0))
-	q.close()
+	q.Put(100)
+	q.Get(0)
+	require.Equal(t, []uint64{100}, q.Get(0))
+	q.Put(200)
+	q.Put(300)
+	q.Get(1)
+	require.Equal(t, []uint64{200, 300}, q.Get(0))
+	q.Close()
 }
 
 func BenchmarkQueue(b *testing.B) {
@@ -55,7 +55,7 @@ func benchOnce(workers, values int, wait bool) {
 		begin, end := w*values, (w+1)*values
 		wg.Go(func() {
 			for i := begin; i < end; i++ {
-				q.put(uint64(i))
+				q.Put(uint64(i))
 			}
 		})
 	}
@@ -67,10 +67,10 @@ func benchOnce(workers, values int, wait bool) {
 
 	var got int
 	for ack, mx := 0, workers*values; got < mx; {
-		ack = len(q.get(uint64(ack)))
+		ack = len(q.Get(uint64(ack)))
 		got += ack
 	}
-	q.close()
+	q.Close()
 }
 
 func BenchmarkChan(b *testing.B) {
