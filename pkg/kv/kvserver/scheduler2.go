@@ -26,6 +26,14 @@ type rangeIDState struct {
 	// read by the worker when it dequeues before resetting the flags.
 	queued crtime.Mono // last time this rangeID was enqueued
 	worker workerID    // last worker this rangeID was enqueued to
+
+	// TODO(pav-kv): populate and use for fast paths in process* methods.
+	cache rangeIDCache
+}
+
+type rangeIDCache struct {
+	repl *Replica
+	rq   *raftReceiveQueue
 }
 
 func makeRangeIDState(id roachpb.RangeID) rangeIDState {
@@ -141,6 +149,22 @@ func (w *schedWorker) enqueue(state *rangeIDState) {
 func (w *schedWorker) run(ctx context.Context) {
 	for states := w.q.Get(0); len(states) > 0; states = w.q.Get(uint64(len(states))) {
 		for _, state := range states {
+			// TODO(pav-kv): consider stepping one kind of event for all states, like:
+			// 	for _, state := range states[:chunkSize] {
+			//		if flags&stateRaftTick {
+			//			w.p.processTick(ctx, rangeID)
+			//		}
+			//	}
+			//	for state {
+			//		... processRaftReady()
+			//	}
+			//	... etc
+			//
+			// This would have better code caching/locality. Plus it allows faster
+			// "batched" ticks, with a lesser chance of delayed ticks.
+			//
+			// This also potentially allows optimizations inside process* functions,
+			// such as loading LivenessMap in processTick once.
 			w.process(ctx, state)
 		}
 		clear(states)
@@ -153,6 +177,11 @@ func (w *schedWorker) process(ctx context.Context, state *rangeIDState) {
 	w.m.RaftSchedulerLatency.RecordValue(int64(state.queued.Elapsed()))
 	// Atomically dequeue all the dirty bits.
 	flags, ticks := state.clear()
+
+	// TODO(pav-kv): all process* calls load the replica from a sync.Map. All of
+	// this can be optimized out: cache the pointers in the rangeIDState. Make the
+	// rangeIDState per (RangeID, ReplicaID) to be sure that replica rotations
+	// don't make things rot.
 
 	// Process requests first. This avoids a scenario where a tick and a
 	// "quiesce" message are processed in the same iteration and intervening
