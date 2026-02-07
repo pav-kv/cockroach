@@ -6,6 +6,7 @@
 package mpsc
 
 import (
+	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -59,8 +60,10 @@ func (q *Queue[T]) Close() {
 const chunkIndexEnd = uint64(math.MaxUint64)>>3 + 1
 
 type chunk[T any] struct {
-	mu    syncutil.RWMutex
-	ready sync.Cond
+	mu      syncutil.RWMutex
+	ready   sync.Cond
+	signals int
+	waits   int
 
 	buf     []T
 	lenMask uint64 // len(buf) - 1 == 2^p - 1
@@ -110,6 +113,7 @@ func (c *chunk[T]) ackAndWait(ack uint64) (begin, end uint64) {
 	defer c.mu.Unlock()
 	c.read += ack
 	for c.read >= c.write && c.read < c.end {
+		c.waits++
 		c.ready.Wait()
 	}
 	return c.read, min(c.write, c.end)
@@ -145,6 +149,7 @@ func (c *chunk[T]) put(value T) (ok, doClose bool) {
 	c.buf[index&c.lenMask] = value
 	// Wake up the consumer in case it is waiting for the first item to appear.
 	if index == c.read {
+		c.signals++
 		c.ready.Signal()
 	}
 	return true, false
@@ -166,6 +171,7 @@ func (c *chunk[T]) close(next *chunk[T]) {
 	c.next = next
 	c.end = min(c.end, c.write)
 	close(c.done)
+	fmt.Println("waits", c.waits, "signals", c.signals)
 }
 
 // heuristics:
