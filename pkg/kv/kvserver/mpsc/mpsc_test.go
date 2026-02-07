@@ -89,7 +89,13 @@ func benchOnce(b *testing.B, workers, values int, wait bool) {
 		runtime.Gosched()
 	}
 	q.Close()
+
+	report(b, lat)
+}
+
+func report(b *testing.B, lat []time.Duration) {
 	b.StopTimer()
+	defer b.StartTimer()
 
 	slices.Sort(lat)
 	fmt.Println(lat[0], lat[len(lat)-1])
@@ -103,8 +109,6 @@ func benchOnce(b *testing.B, workers, values int, wait bool) {
 	for _, p := range []float64{50, 99, 99.9, 99.99} {
 		b.ReportMetric(float64(lat[int(float64(len(lat))*p/100)])/1e3, fmt.Sprintf("p%.2f-latency(us)", p))
 	}
-
-	b.StartTimer()
 }
 
 func BenchmarkChan(b *testing.B) {
@@ -120,7 +124,8 @@ func BenchmarkChan(b *testing.B) {
 
 func benchOnceChan(b *testing.B, workers, values int) {
 	b.StopTimer()
-	q := make(chan uint64, 1<<22)
+	q := make(chan crtime.Mono, 1<<22)
+	lat := make([]time.Duration, 0, workers*values)
 	b.StartTimer()
 
 	start := make(chan struct{})
@@ -132,7 +137,7 @@ func benchOnceChan(b *testing.B, workers, values int) {
 		wg.Go(func() {
 			<-start
 			for i := begin; i < end; i++ {
-				q <- uint64(i)
+				q <- crtime.NowMono()
 			}
 		})
 	}
@@ -142,8 +147,11 @@ func benchOnceChan(b *testing.B, workers, values int) {
 	var got int
 	for mx := workers * values; got < mx; {
 		x := <-q
-		_ = x
+		lat = append(lat, crtime.NowMono().Sub(x))
 		got++
 	}
 	close(q)
+	b.StopTimer()
+
+	report(b, lat)
 }
