@@ -19,8 +19,8 @@ type Queue[T any] struct {
 	tail *chunk[T]
 }
 
-func NewQueue[T any]() *Queue[T] {
-	q := &Queue[T]{tail: newChunk[T](16)}
+func NewQueue[T any](size uint64) *Queue[T] {
+	q := &Queue[T]{tail: newChunk[T](size)}
 	q.head.Store(q.tail)
 	return q
 }
@@ -38,7 +38,7 @@ func (q *Queue[T]) Get(ack uint64) []T {
 }
 
 func (q *Queue[T]) Put(value T) bool {
-	head := q.head.Load()
+	head := q.head.Load() // TODO: cache it well instead of an atomic each time
 	for ok, doClose := head.put(value); !ok; ok, doClose = head.put(value) {
 		if doClose {
 			next := newChunk[T](sizePolicy(head.lenMask + 1)) // TODO: sync.Pool

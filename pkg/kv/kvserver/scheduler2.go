@@ -131,7 +131,7 @@ type schedWorker struct {
 }
 
 func newSchedWorker(p raftProcessor, m *StoreMetrics) *schedWorker {
-	return &schedWorker{q: mpsc.NewQueue[*rangeIDState](), p: p, m: m}
+	return &schedWorker{q: mpsc.NewQueue[*rangeIDState](1024), p: p, m: m}
 }
 
 func (w *schedWorker) enqueue(state *rangeIDState) {

@@ -15,5 +15,8 @@ go_test(
     name = "mpsc_test",
     srcs = ["mpsc_test.go"],
     embed = [":mpsc"],
-    deps = ["@com_github_stretchr_testify//require"],
+    deps = [
+        "@com_github_cockroachdb_crlib//crtime",
+        "@com_github_stretchr_testify//require",
+    ],
 )
