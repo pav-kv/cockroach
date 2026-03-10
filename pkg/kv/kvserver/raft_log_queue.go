@@ -116,7 +116,7 @@ var looselyCoupledTruncationEnabled = settings.RegisterBoolSetting(
 	settings.SystemOnly,
 	"kv.raft_log.loosely_coupled_truncation.enabled",
 	"set to true to loosely couple the raft log truncation",
-	false,
+	envutil.EnvOrDefaultBool("COCKROACH_LOOSELY_COUPLED_TRUNC", false),
 	settings.WithVisibility(settings.Reserved),
 )
 
