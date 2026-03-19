@@ -761,6 +761,21 @@ func testKVNemesisImpl(t testing.TB, cfg kvnemesisTestCfg) {
 	var partitioner rpc.Partitioner
 	args, closer := cfg.testClusterArgs(ctx, t, rng, tr, &partitioner, cfg.mode)
 	tc := testcluster.StartTestCluster(t, cfg.numNodes, args)
+	tc.Stopper().AddCloser(closer)
+	defer tc.Stopper().Stop(ctx)
+	for i := 0; i < cfg.numNodes; i++ {
+		g := tc.Servers[i].StorageLayer().GossipI().(*gossip.Gossip)
+		addr := g.GetNodeAddr().String()
+		nodeID := g.NodeID.Get()
+		partitioner.RegisterNodeAddr(addr, nodeID)
+	}
+	if cfg.mode == Liveness {
+		// Wire up the Partitioner so that CrashNode can isolate the crashing node
+		// in both directions, preventing in-flight gRPC responses (e.g. MsgAppResp
+		// on snapshot streams) from reaching peers after CrashClone.
+		tc.Partitioner = &partitioner
+		partitioner.EnablePartitions(true)
+	}
 	if cs := cfg.crashSync; cs != nil {
 		tc.PostCrashCloneFn = func(idx int) {
 			// CrashClone just completed. If a snapshot is blocked (waiting in
@@ -774,14 +789,6 @@ func testKVNemesisImpl(t testing.TB, cfg kvnemesisTestCfg) {
 			default:
 			}
 		}
-	}
-	tc.Stopper().AddCloser(closer)
-	defer tc.Stopper().Stop(ctx)
-	for i := 0; i < cfg.numNodes; i++ {
-		g := tc.Servers[i].StorageLayer().GossipI().(*gossip.Gossip)
-		addr := g.GetNodeAddr().String()
-		nodeID := g.NodeID.Get()
-		partitioner.RegisterNodeAddr(addr, nodeID)
 	}
 	dbs, sqlDBs := make([]*kv.DB, cfg.numNodes), make([]*gosql.DB, cfg.numNodes)
 	for i := 0; i < cfg.numNodes; i++ {

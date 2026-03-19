@@ -241,6 +241,13 @@ func (p *Partitioner) RemovePartition(from roachpb.NodeID, to roachpb.NodeID) er
 	return err
 }
 
+// RemoveAllPartitions removes all active partitions.
+func (p *Partitioner) RemoveAllPartitions() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.mu.partitions = nil
+}
+
 func (p *Partitioner) isPartitioned(from roachpb.NodeID, to roachpb.NodeID) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()

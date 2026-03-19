@@ -33,6 +33,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/multitenant/tenantcapabilitiespb"
 	"github.com/cockroachdb/cockroach/pkg/raft/raftpb"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
+	"github.com/cockroachdb/cockroach/pkg/rpc"
 	"github.com/cockroachdb/cockroach/pkg/rpc/nodedialer"
 	"github.com/cockroachdb/cockroach/pkg/rpc/rpcbase"
 	"github.com/cockroachdb/cockroach/pkg/server"
@@ -84,6 +85,13 @@ type TestCluster struct {
 
 	defaultTestTenantOptions base.DefaultTestTenantOptions
 	defaultDRPCOption        base.DefaultTestDRPCOption
+
+	// Partitioner, if set, is used by CrashNode to isolate the crashing node
+	// from its peers in both directions. This prevents in-flight gRPC responses
+	// (e.g. MsgAppResp in snapshot streams) from reaching peers after CrashClone
+	// captures VFS state. Partitions are automatically removed when the node is
+	// restarted via RestartServer.
+	Partitioner *rpc.Partitioner
 
 	// PostCrashCloneFn, if set, is called after the VFS CrashClone snapshot is
 	// taken but before the server is stopped during CrashNode. This can be used
@@ -2079,6 +2087,14 @@ func (tc *TestCluster) RestartServerWithInspect(
 			}
 		}()
 
+		// Remove all partitions that were added by CrashNode before starting
+		// the server, since Start needs peer connectivity to succeed. We remove
+		// all partitions (not just those involving this node) because there's no
+		// reason to maintain any partitions across a restart.
+		if tc.Partitioner != nil {
+			tc.Partitioner.RemoveAllPartitions()
+		}
+
 		if err := s.Start(ctx); err != nil {
 			return err
 		}
@@ -2134,37 +2150,11 @@ func (tc *TestCluster) RestartServerWithInspect(
 		})
 }
 
-// isolateNodeFromPeers trips circuit breakers on the crashed node's dialer to
-// isolate it from all peer nodes. This simulates network partition behavior
-// during a crash. The circuit breakers will automatically reset when the node
-// is restarted and connections are successfully re-established via the
-// background `AsyncProbe` mechanism; manual undo is not needed.
-func (tc *TestCluster) isolateNodeFromPeers(idx int) {
-	nodeDialer, ok := tc.Servers[idx].NodeDialer().(*nodedialer.Dialer)
-	if !ok {
-		return
-	}
-	for peerIdx := range tc.Servers {
-		if peerIdx == idx {
-			continue
-		}
-		peerNodeID := tc.Servers[peerIdx].NodeID()
-		for c := 0; c < rpcbase.NumConnectionClasses; c++ {
-			if brk, found := nodeDialer.GetCircuitBreaker(
-				peerNodeID,
-				rpcbase.ConnectionClass(c),
-			); found {
-				brk.Report(errors.New("connection terminated by crash emulation"))
-			}
-		}
-	}
-}
-
 // CrashNode emulates a crash of the server at the given index by stopping it
 // and creating a snapshot of its in-memory filesystems (capturing state at the
 // last sync point). This allows testing crash recovery scenarios. Requires all
-// stores to use sticky VFS with in-memory storage. Also reports connection
-// failures to peer nodes' circuit breakers to simulate network disconnection.
+// stores to use sticky VFS with in-memory storage and a Partitioner to isolate
+// the crashing node from peers.
 func (tc *TestCluster) CrashNode(idx int) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
@@ -2181,17 +2171,27 @@ func (tc *TestCluster) CrashNode(idx int) {
 			"server %d does not have sticky VFS registry; crash emulation requires sticky VFS", idx)
 	}
 
-	// Isolate the crashed node from its peers by tripping circuit breakers.
-	// This simulates network partition behavior during a crash. Circuit breakers
-	// will automatically reset when the node is restarted and connections are
-	// successfully re-established (via background probe mechanisms), so no manual
-	// undo is needed.
+	// Isolate the crashed node from its peers to prevent any messages from
+	// escaping after CrashClone. Without this, in-flight gRPC responses (e.g.
+	// MsgAppResp on snapshot streams) could leak false durability signals into
+	// the cluster.
 	//
-	// This step is first because we want to prevent any message sent after the
-	// CrashClone of the VFS. Otherwise it would be able to leak false durability
-	// signal into the cluster, such as with raft messages like
-	// MsgVoteResp / MsgAppResp.
-	tc.isolateNodeFromPeers(idx)
+	// Bidirectional partitions (crashing node ↔ all peers) are used because
+	// the Partitioner's stream interceptors block RecvMsg on existing client
+	// streams that peers have open to the crashing node, preventing them from
+	// reading responses sent by the crashing node's server-side handlers.
+	if tc.Partitioner == nil {
+		tc.t.Fatalf("CrashNode requires a Partitioner to isolate the crashing node")
+	}
+	crashingNodeID := tc.Servers[idx].NodeID()
+	for peerIdx := range tc.Servers {
+		if peerIdx == idx {
+			continue
+		}
+		peerNodeID := tc.Servers[peerIdx].NodeID()
+		_ = tc.Partitioner.AddPartition(crashingNodeID, peerNodeID)
+		_ = tc.Partitioner.AddPartition(peerNodeID, crashingNodeID)
+	}
 
 	crashedVFSesMap := make(map[string]*vfs.MemFS)
 	for i, spec := range serverArgs.StoreSpecs {
