@@ -93,12 +93,6 @@ type TestCluster struct {
 	// restarted via RestartServer.
 	Partitioner *rpc.Partitioner
 
-	// PostCrashCloneFn, if set, is called after the VFS CrashClone snapshot is
-	// taken but before the server is stopped during CrashNode. This can be used
-	// to synchronize with other operations (e.g., raft snapshot application)
-	// that should proceed between the CrashClone and the server stop.
-	PostCrashCloneFn func(idx int)
-
 	t serverutils.TestFataler
 }
 
@@ -2206,10 +2200,6 @@ func (tc *TestCluster) CrashNode(idx int) {
 		// simulating what would be on disk after a crash (only synced data survives).
 		currentVFS := serverKnobs.StickyVFSRegistry.Get(spec.StickyVFSID)
 		crashedVFSesMap[spec.StickyVFSID] = currentVFS.CrashClone(vfs.CrashCloneCfg{})
-	}
-
-	if tc.PostCrashCloneFn != nil {
-		tc.PostCrashCloneFn(idx)
 	}
 
 	tc.stopServerLocked(idx)
