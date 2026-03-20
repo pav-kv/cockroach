@@ -73,6 +73,25 @@ func verifyStatsOnServers(
 		})
 	}
 
+	// Log server state before stopping, to capture raft activity from
+	// the server's lifetime (reproposals, flushes, memtable size).
+	for _, i := range storeIdxSlice {
+		s := tc.GetFirstStoreFromServer(t, i)
+		m := s.Metrics()
+		eng := s.TODOBothEngines()
+		rawMetrics := eng.GetMetrics()
+		t.Logf("verifyStatsOnServers: server %d pre-stop: "+
+			"RaftCommandsReproposed=%d, RaftCommandsApplied=%d, "+
+			"Flushes=%d, MemtableSize=%d, NumSSTables=%d",
+			i,
+			m.RaftCommandsReproposed.Count(),
+			m.RaftCommandsApplied.Count(),
+			rawMetrics.Flush.Count,
+			rawMetrics.MemTable.Size,
+			rawMetrics.NumSSTables(),
+		)
+	}
+
 	// Stop all servers.
 	//
 	// Stopping the servers stabilizes the metrics, ensuring
@@ -361,6 +380,23 @@ func TestStoreMetrics(t *testing.T) {
 	checkGauge(t, "store 1", tc.GetFirstStoreFromServer(t, 1).Metrics().ReplicaCount, 1)
 
 	// Verify all stats on all stores after range is removed.
+	// Log reproposal and raft activity before stopping servers for the
+	// final restart, to capture activity from the server's full lifetime.
+	for _, serverIdx := range []int{1, 2} {
+		s := tc.GetFirstStoreFromServer(t, serverIdx)
+		m := s.Metrics()
+		eng := s.TODOBothEngines()
+		rawMetrics := eng.GetMetrics()
+		t.Logf("server %d pre-final-restart: RaftCommandsReproposed=%d, RaftCommandsApplied=%d, "+
+			"Flushes=%d, MemtableSize=%d, NumSSTables=%d",
+			serverIdx,
+			m.RaftCommandsReproposed.Count(),
+			m.RaftCommandsApplied.Count(),
+			rawMetrics.Flush.Count,
+			rawMetrics.MemTable.Size,
+			rawMetrics.NumSSTables(),
+		)
+	}
 	verifyStatsOnServers(t, tc, specs, stickyVFSRegistry, 1, 2)
 
 	for _, serverIdx := range []int{1, 2} {
