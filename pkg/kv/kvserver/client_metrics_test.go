@@ -111,6 +111,13 @@ func verifyStatsOnServers(
 		if err != nil {
 			t.Fatal(err)
 		}
+		// Log the LSM state while the server is stopped and the engine is
+		// open read-only. This tells us whether data has been flushed to
+		// SSTs (block cache relevant) or is only in memtables (no block
+		// cache involvement).
+		roMetrics := e.GetMetrics()
+		t.Logf("verifyStatsOnServers: server %d read-only engine: NumSSTables=%d, MemtableSize=%d",
+			storeIdx, roMetrics.NumSSTables(), roMetrics.MemTable.Size)
 		realStats, err := s.ComputeMVCCStats(e)
 		e.Close()
 		if err != nil {
@@ -146,6 +153,16 @@ func verifyStatsOnServers(
 	// Restart all servers.
 	for _, i := range storeIdxSlice {
 		require.NoError(t, tc.RestartServer(i))
+		m := tc.GetFirstStoreFromServer(t, i).Metrics()
+		t.Logf("verifyStatsOnServers: server %d just restarted: "+
+			"RaftCommandsReproposed=%d, RaftCommandsApplied=%d, "+
+			"BlockCacheHits=%d, BlockCacheMisses=%d",
+			i,
+			m.RaftCommandsReproposed.Count(),
+			m.RaftCommandsApplied.Count(),
+			m.RdbBlockCacheHits.Count(),
+			m.RdbBlockCacheMisses.Count(),
+		)
 	}
 }
 
@@ -348,9 +365,41 @@ func TestStoreMetrics(t *testing.T) {
 
 	for _, serverIdx := range []int{1, 2} {
 		s := tc.GetFirstStoreFromServer(t, serverIdx)
+
+		// Log raw Pebble engine metrics before ComputeMetrics to capture
+		// the state established by server startup alone.
+		eng := s.TODOBothEngines()
+		rawMetrics := eng.GetMetrics()
+		var sstPerLevel [7]uint64
+		for i := range rawMetrics.Levels {
+			sstPerLevel[i] = rawMetrics.Levels[i].Tables.Count
+		}
+		rawHits, rawMisses := rawMetrics.BlockCache.HitsAndMisses.Aggregate()
+		t.Logf("server %d before ComputeMetrics: pebble BlockCache.Hits=%d Misses=%d Size=%d, "+
+			"SSTs=[L0:%d L1:%d L2:%d L3:%d L4:%d L5:%d L6:%d], MemtableSize=%d, "+
+			"NumSSTables=%d, RaftCommandsReproposed=%d, RaftCommandsApplied=%d",
+			serverIdx,
+			rawHits, rawMisses, rawMetrics.BlockCache.Size,
+			sstPerLevel[0], sstPerLevel[1], sstPerLevel[2], sstPerLevel[3],
+			sstPerLevel[4], sstPerLevel[5], sstPerLevel[6],
+			rawMetrics.MemTable.Size,
+			rawMetrics.NumSSTables(),
+			s.Metrics().RaftCommandsReproposed.Count(),
+			s.Metrics().RaftCommandsApplied.Count(),
+		)
+
 		if err := s.ComputeMetrics(context.Background()); err != nil {
 			t.Fatal(err)
 		}
+
+		// Log again after ComputeMetrics to see what it added.
+		rawMetrics2 := eng.GetMetrics()
+		rawHits2, rawMisses2 := rawMetrics2.BlockCache.HitsAndMisses.Aggregate()
+		t.Logf("server %d after ComputeMetrics: pebble BlockCache.Hits=%d (+%d) Misses=%d (+%d) Size=%d",
+			serverIdx,
+			rawHits2, rawHits2-rawHits, rawMisses2, rawMisses2-rawMisses,
+			rawMetrics2.BlockCache.Size,
+		)
 
 		// TODO(jackson): Adjust this test to reliably construct multiple levels
 		// within the LSM so that we can assert non-zero bloom filter
