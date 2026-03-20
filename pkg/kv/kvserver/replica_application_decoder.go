@@ -85,9 +85,6 @@ func (d *replicaDecoder) retrieveLocalProposals() (anyLocal bool) {
 	for it.init(&d.cmdBuf); it.Valid(); it.Next() {
 		cmd := it.cur()
 		cmd.proposal = d.r.mu.proposals[cmd.ID]
-		log.KvExec.Infof(d.r.AnnotateCtx(context.Background()),
-			"retrieveLocalProposals: raftIndex=%d cmdID=%x dataSize=%d local=%t",
-			cmd.Index(), cmd.ID, len(cmd.Data), cmd.proposal != nil)
 		var alloc *quotapool.IntAlloc
 		if cmd.proposal != nil {
 			// INVARIANT: a proposal is consumed (i.e. removed from the proposals map)
