@@ -1280,6 +1280,8 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 			if !r.store.TestingKnobs().DisableRefreshReasonNewLeaderOrConfigChange {
 				refreshReason = reasonNewLeaderOrConfigChange
 			}
+			log.KvExec.Infof(ctx, "detected %d empty entries (pending proposals: %d)",
+				stats.apply.numEmptyEntries, len(r.mu.proposals))
 		}
 		r.mu.raftTracer.MaybeTraceApplied(toApply)
 	}
@@ -1715,7 +1717,7 @@ func (r *Replica) refreshProposalsLocked(
 		return
 	}
 
-	log.KvExec.VInfof(ctx, 2,
+	log.KvExec.Infof(ctx,
 		"pending commands: reproposing %d (at applied index %d, lease applied index %d) %s",
 		len(reproposals), r.shMu.state.RaftAppliedIndex,
 		r.shMu.state.LeaseAppliedIndex, reason)
@@ -1727,6 +1729,8 @@ func (r *Replica) refreshProposalsLocked(
 	// definitely required, however.
 	sort.Sort(reproposals)
 	for _, p := range reproposals {
+		log.KvExec.Infof(ctx, "re-submitting command %x (MLI %d, CT %s): %s %s",
+			p.idKey, p.command.MaxLeaseIndex, p.command.ClosedTimestamp, reason, p.Request.Summary())
 		log.Eventf(p.Context(), "re-submitting command %x (MLI %d, CT %s): %s",
 			p.idKey, p.command.MaxLeaseIndex, p.command.ClosedTimestamp, reason)
 		if err := r.mu.proposalBuf.ReinsertLocked(ctx, p); err != nil {
