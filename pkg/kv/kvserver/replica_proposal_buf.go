@@ -262,6 +262,8 @@ func (b *propBuf) ReinsertLocked(ctx context.Context, p *ProposalData) error {
 	// inserting but is applied by the time we flush. So we don't drop the
 	// proposal here, but instead in FlushLockedWithRaftGroup, to unify the two
 	// cases.
+	log.KvExec.Infof(ctx, "ReinsertLocked: proposal %x v2Seen=%t (%s)",
+		p.idKey, p.v2SeenDuringApplication, p.Request.Summary())
 
 	// Update the proposal buffer counter and determine which index we should
 	// insert at.
@@ -433,6 +435,9 @@ func (b *propBuf) FlushLockedWithRaftGroup(
 			p.tok.doneIfNotMovedLocked(ctx)
 			continue
 		}
+
+		log.KvExec.Infof(ctx, "flushing proposal %x: reproposal=%t v2Seen=%t (%s)",
+			p.idKey, reproposal, p.v2SeenDuringApplication, p.Request.Summary())
 
 		// Raft processing bookkeeping.
 		b.p.registerProposalLocked(p)
@@ -618,6 +623,8 @@ func (b *propBuf) maybeRejectUnsafeProposalLocked(
 		// Due to `refreshProposalsLocked`, we can end up with proposals that are
 		// already applied. We just want to drop those on the floor as we know
 		// that they have fully been taken care of.
+		log.KvExec.Infof(ctx, "dropping proposal %x during flush: v2SeenDuringApplication=true (%s)",
+			p.idKey, p.Request.Summary())
 		return true
 	}
 	if p.Request.IsSingleRequestLeaseRequest() || p.Request.IsSingleTransferLeaseRequest() {

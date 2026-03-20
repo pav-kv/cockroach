@@ -109,7 +109,13 @@ func (r *Replica) prepareLocalResult(ctx context.Context, cmd *replicatedCmd) {
 		cmd.response.Err = pErr
 		switch cmd.Rejection {
 		case kvserverbase.ProposalRejectionPermanent:
+			log.KvExec.Infof(ctx,
+				"PermanentRejection for local cmd %x (MLI %d): %s",
+				cmd.ID, cmd.Cmd.MaxLeaseIndex, cmd.ForcedError)
 		case kvserverbase.ProposalRejectionIllegalLeaseIndex:
+			log.KvExec.Infof(ctx,
+				"IllegalLeaseIndex for local cmd %x (MLI %d): %s",
+				cmd.ID, cmd.Cmd.MaxLeaseIndex, cmd.ForcedError)
 			// Reset the error as it's now going to be determined by the outcome of
 			// reproposing (or not); note that tryReproposeWithNewLeaseIndexRaftMuLocked will
 			// return `nil` if the entry is not eligible for reproposals.

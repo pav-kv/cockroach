@@ -177,6 +177,9 @@ func (b *replicaAppBatch) Stage(
 	if size == 0 {
 		b.ab.numEmptyEntries++
 	}
+	log.KvExec.Infof(ctx,
+		"staged entry: raftIndex=%d cmdID=%x dataSize=%d rejected=%t isLocal=%t leaseAppliedIndex=%d",
+		cmd.Index(), cmd.ID, size, cmd.Rejected(), cmd.IsLocal(), b.state.LeaseAppliedIndex)
 
 	// The command was checked by shouldApplyCommand, so it can be returned
 	// as an apply.CheckedCommand.
