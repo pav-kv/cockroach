@@ -375,6 +375,7 @@ func (sm *replicaStateMachine) maybeApplyConfChange(ctx context.Context, cmd *re
 		// to raft.
 		return nil
 	}
+	log.KvExec.Infof(ctx, "applying conf change at raftIndex=%d: %v", cmd.Index(), cc)
 	return sm.r.withRaftGroup(func(rn *raft.RawNode) (bool, error) {
 		// NB: `etcd/raft` configuration changes diverge from the official Raft way
 		// in that a configuration change becomes active when the corresponding log

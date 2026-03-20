@@ -461,6 +461,17 @@ func (ft *FortificationTracker) Empty() bool {
 	return len(ft.fortification) == 0
 }
 
+// LeaderMaxSupported returns the leaderMaxSupported timestamp for debugging.
+func (ft *FortificationTracker) LeaderMaxSupported() hlc.Timestamp {
+	return ft.leaderMaxSupported
+}
+
+// ComputedLeadSupportUntil returns the computedLeadSupportUntil timestamp for
+// debugging.
+func (ft *FortificationTracker) ComputedLeadSupportUntil() hlc.Timestamp {
+	return ft.computedLeadSupportUntil
+}
+
 func (ft *FortificationTracker) String() string {
 	if ft.Empty() {
 		return "empty"

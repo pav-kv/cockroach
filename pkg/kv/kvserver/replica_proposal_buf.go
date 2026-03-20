@@ -531,6 +531,9 @@ func (b *propBuf) FlushLockedWithRaftGroup(
 				firstErr = err
 				continue
 			}
+			log.KvExec.Infof(ctx,
+				"proposing conf change to raft: proposal %x reproposal=%t cc=%v dataLen=%d (%s)",
+				p.idKey, reproposal, cc, len(data), p.Request.Summary())
 			sl := []raftpb.Entry{{Type: typ, Data: data}}
 			// Send config change in a single-element batch. We go through
 			// proposeBatch since there's observability in there.

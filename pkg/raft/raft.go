@@ -1375,7 +1375,8 @@ func (r *raft) becomeLeader() {
 	// so the preceding log append does not count against the uncommitted log
 	// quota of the new leader. In other words, after the call to appendEntry,
 	// r.uncommittedSize is still 0.
-	r.logger.Infof("%x became leader at term %d", r.id, r.Term)
+	r.logger.Warningf("%x became leader at term %d (pendingConfIndex=%d lastIndex=%d applied=%d)",
+		r.id, r.Term, r.pendingConfIndex, r.raftLog.lastIndex(), r.raftLog.applied)
 }
 
 func (r *raft) becomeProbe(pr *tracker.Progress) {
@@ -1859,15 +1860,21 @@ func stepLeader(r *raft, m pb.Message) error {
 				cc = ccc
 			}
 			if cc != nil {
+				configChangeSafe := r.fortificationTracker.ConfigChangeSafe()
 				ccCtx := confchange.ValidationContext{
 					CurConfig:                         &r.config,
 					Applied:                           r.raftLog.applied,
 					PendingConfIndex:                  r.pendingConfIndex,
-					LeadSupportSafe:                   r.fortificationTracker.ConfigChangeSafe(),
+					LeadSupportSafe:                   configChangeSafe,
 					DisableValidationAgainstCurConfig: r.disableConfChangeValidation,
 				}
 				if err := confchange.ValidateProp(ccCtx, cc.AsV2()); err != nil {
-					r.logger.Infof("%x ignoring conf change %v at config %s: %s", r.id, cc, r.config, err)
+					r.logger.Warningf("%x ignoring conf change %v at config %s: %s "+
+						"(applied=%d pendingConfIndex=%d configChangeSafe=%t leaderMaxSupported=%s computedLeadSupportUntil=%s)",
+						r.id, cc, r.config, err,
+						r.raftLog.applied, r.pendingConfIndex, configChangeSafe,
+						r.fortificationTracker.LeaderMaxSupported(),
+						r.fortificationTracker.ComputedLeadSupportUntil())
 					m.Entries[i] = pb.Entry{Type: pb.EntryNormal}
 				} else {
 					r.pendingConfIndex = r.raftLog.lastIndex() + uint64(i) + 1
@@ -2755,6 +2762,13 @@ func (r *raft) switchToConfig(cfg quorum.Config, progressMap tracker.ProgressMap
 	// Config changes might cause the LeadSupportUntil to change, we need to
 	// recalculate it here.
 	r.fortificationTracker.ComputeLeadSupportUntil(r.state)
+	r.logger.Warningf("%x after config change to %s: configChangeSafe=%t "+
+		"leaderMaxSupported=%s computedLeadSupportUntil=%s fortification=%s",
+		r.id, r.config,
+		r.fortificationTracker.ConfigChangeSafe(),
+		r.fortificationTracker.LeaderMaxSupported(),
+		r.fortificationTracker.ComputedLeadSupportUntil(),
+		r.fortificationTracker)
 
 	if r.isLearner {
 		// This node is leader and was demoted, step down.
