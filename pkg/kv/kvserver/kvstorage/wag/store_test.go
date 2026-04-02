@@ -78,7 +78,7 @@ func createReplica(s *store, w storage.Writer, id roachpb.FullReplicaID) error {
 	if err := writeStateMachine(b, "state-machine-key", "state"); err != nil {
 		return err
 	}
-	return Write(w, s.seq.Next(1), wagpb.Node{
+	return Write(w, s.seq.Next(), wagpb.Node{
 		Events: []wagpb.Event{
 			{Addr: wagpb.MakeAddr(id, 0), Type: wagpb.EventCreate},
 		},
@@ -87,7 +87,7 @@ func createReplica(s *store, w storage.Writer, id roachpb.FullReplicaID) error {
 }
 
 func initReplica(s *store, w storage.Writer, id roachpb.FullReplicaID, index uint64) error {
-	return Write(w, s.seq.Next(1), wagpb.Node{
+	return Write(w, s.seq.Next(), wagpb.Node{
 		Events: []wagpb.Event{
 			{Addr: wagpb.MakeAddr(id, kvpb.RaftIndex(index)), Type: wagpb.EventInit},
 		},
@@ -107,7 +107,7 @@ func splitReplica(
 	} else if err := writeStateMachine(b, "rhs-key", "rhs-state"); err != nil {
 		return err
 	}
-	return Write(w, s.seq.Next(1), wagpb.Node{
+	return Write(w, s.seq.Next(), wagpb.Node{
 		Events: []wagpb.Event{
 			{Addr: wagpb.MakeAddr(rhsID, 10), Type: wagpb.EventInit},
 			{Addr: wagpb.MakeAddr(lhsID, kvpb.RaftIndex(index)), Type: wagpb.EventSplit},
@@ -131,7 +131,7 @@ func TestSeqInit(t *testing.T) {
 
 		var seq Seq
 		require.NoError(t, seq.Init(ctx, eng))
-		require.Equal(t, uint64(1), seq.Next(1))
+		require.Equal(t, uint64(1), seq.Next())
 	})
 
 	t.Run("resumes after last node", func(t *testing.T) {
@@ -145,14 +145,14 @@ func TestSeqInit(t *testing.T) {
 		b := eng.NewWriteBatch()
 		require.NoError(t, createReplica(&s, b, id))
 		require.NoError(t, initReplica(&s, b, id, 10))
-		s.seq.Next(3) // skip indices 3-5
+		s.seq.Next() // skip index 3
 		require.NoError(t, splitReplica(&s, b, id, rhsID, 20))
 		require.NoError(t, b.Commit(false /* sync */))
 
 		// Init a fresh sequencer from the log engine.
 		var seq2 Seq
 		require.NoError(t, seq2.Init(ctx, eng))
-		// Next allocation should be after the last persisted index (6).
-		require.Equal(t, uint64(7), seq2.Next(1))
+		// Next allocation should be after the last persisted index (5).
+		require.Equal(t, uint64(5), seq2.Next())
 	})
 }
