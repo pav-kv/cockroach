@@ -188,7 +188,7 @@ rule CommitDestruction {
 -- When a replica is removed, its raft group and in-flight proposals are
 -- torn down. Outstanding proposals receive AmbiguousResultError.
 rule DisconnectReplication {
-    when: replica: Replica.destroy_status becomes removed
+    when: replica: Replica.destroy_status transitions_to removed
     ensures: ReplicationDisconnected(replica)
 
     @guidance
@@ -221,34 +221,49 @@ rule ReplicaGCRemoval {
 }
 
 -- When a ChangeReplicas command is applied that removes this store,
--- the replica destroys itself inline during raft application.
+-- the replica destroys itself inline during raft application. The
+-- destruction is part of the raft application batch — not a standalone
+-- PendingDestruction — so it shares the application batch's atomicity.
 rule ConfChangeRemoval {
     when: ConfChangeApplied(replica, new_descriptor)
     requires: replica.store not in new_descriptor.replicas.store_id
     requires: replica.destroy_status = alive
 
-    ensures: StageDestroyRequested(replica, new_descriptor.next_replica_id)
+    ensures: replica.destroy_status = removed
+    ensures: replica.mark.replica_id = null
+    ensures: replica.mark.next_replica_id = new_descriptor.next_replica_id
 
     @guidance
-        -- The destruction is staged during raft entry application.
-        -- The data is destroyed in the application batch, then
-        -- removeInitializedReplicaRaftMuLocked is called with
-        -- DestroyData=false since data is already gone.
+        -- The data is destroyed inside the raft application batch,
+        -- which is committed as part of normal raft log application.
+        -- After commit, removeInitializedReplicaRaftMuLocked is called
+        -- with DestroyData=false since data is already gone.
+        -- This does NOT go through the PendingDestruction staging
+        -- protocol — the atomicity boundary is the raft application
+        -- batch, not a standalone engine batch.
 }
 
 ------------------------------------------------------------
 -- Rules: Range Merge
 ------------------------------------------------------------
 
--- When a merge trigger applies on the subsumed (RHS) replica, its
--- replicated metadata is cleared but user keys are preserved for
--- the LHS to inherit. A MergedTombstone is written to permanently
--- prevent resurrection.
+-- When the LHS applies its merge trigger, it subsumes the RHS on the
+-- same store. The RHS's replicated metadata is cleared but user keys
+-- are preserved for the LHS to inherit. A MergedTombstone is written
+-- to permanently prevent resurrection.
+--
+-- The RHS may already be merge_pending (if it applied the merge commit
+-- before the LHS did) or still alive (if the LHS is ahead). The code
+-- unconditionally overwrites the destroy status in either case.
+-- Like ConfChangeRemoval, the destruction is part of the LHS's raft
+-- application batch, not a standalone PendingDestruction.
 rule SubsumeReplica {
-    when: MergeTriggerApplied(rhs_replica)
-    requires: rhs_replica.destroy_status = alive
+    when: MergeTriggerApplied(lhs_replica, rhs_replica)
+    requires: rhs_replica.destroy_status = alive or rhs_replica.destroy_status = merge_pending
+    requires: rhs_replica.store = lhs_replica.store
 
     ensures: rhs_replica.destroy_status = removed
+    ensures: rhs_replica.mark.replica_id = null
     ensures: rhs_replica.mark.next_replica_id = NextReplicaID{
         id: config.merged_tombstone_id
     }
@@ -260,6 +275,9 @@ rule SubsumeReplica {
         -- A placeholder is inserted covering the RHS keyspace to
         -- prevent concurrent snapshot application while the LHS
         -- extends its descriptor.
+        -- This does NOT go through the PendingDestruction staging
+        -- protocol — the atomicity boundary is the LHS's raft
+        -- application batch.
 }
 
 -- After the LHS extends its descriptor to cover the RHS keyspace,
@@ -390,9 +408,9 @@ invariant MergedRangeNeverReturns {
         not exists Replica{range_id: mark.replica.range_id, store: mark.replica.store}
 }
 
--- The RangeTombstone must be written to storage before the RaftReplicaID
--- is cleared. This ensures crash recovery always sees the tombstone.
-invariant TombstoneBeforeIDClear {
+-- The RangeTombstone and RaftReplicaID are written in the same atomic
+-- batch. If the replica ID has been cleared, a tombstone must exist.
+invariant TombstoneAccompaniesIDClear {
     for mark in ReplicaMarks where mark.replica_id = null:
         mark.next_replica_id.id > 0
 }
