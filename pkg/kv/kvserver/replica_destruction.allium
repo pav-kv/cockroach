@@ -1,0 +1,431 @@
+-- allium: 3
+-- replica_destruction.allium
+--
+-- Specifies the lifecycle of replica destruction on a CockroachDB Store.
+-- Covers three scenarios: rebalancing removal, range merge subsumption,
+-- and GC of merge-pending replicas. Focuses on the state machine,
+-- invariants, and observable outcomes — not on storage engine internals.
+
+------------------------------------------------------------
+-- External Entities
+------------------------------------------------------------
+
+-- A Store holds replicas on a single node.
+external entity Store { store_id: StoreID }
+
+-- A RangeDescriptor defines a range and its replica membership.
+external entity RangeDescriptor {
+    range_id: RangeID
+    start_key: Key
+    end_key: Key
+    replicas: Set<ReplicaDescriptor>
+}
+
+-- A ReplicaDescriptor identifies a replica within a range descriptor.
+external entity ReplicaDescriptor { store_id: StoreID, replica_id: ReplicaID }
+
+-- Meta2 is the authoritative source of range descriptor lookups.
+external entity Meta2 {}
+
+------------------------------------------------------------
+-- Value Types
+------------------------------------------------------------
+
+value ReplicaID { id: Integer }
+
+value StoreID { id: Integer }
+
+value RangeID { id: Integer }
+
+value Key { raw: ByteArray }
+
+value NextReplicaID { id: Integer }
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+entity Replica {
+    range_id: RangeID
+    replica_id: ReplicaID
+    store: Store
+    initialized: Boolean
+    destroy_status: alive | merge_pending | removed
+
+    -- The on-disk mark combining replica ID and tombstone.
+    mark: ReplicaMark with replica = this
+
+    transitions destroy_status {
+        alive -> merge_pending
+        alive -> removed
+        merge_pending -> removed
+        terminal: removed
+    }
+}
+
+-- ReplicaMark is the durable on-disk state combining a replica's current
+-- identity (RaftReplicaID) and its destruction barrier (RangeTombstone).
+-- When a replica is destroyed, the RaftReplicaID is cleared and the
+-- RangeTombstone's NextReplicaID is raised to prevent resurrection.
+entity ReplicaMark {
+    replica: Replica
+    replica_id: ReplicaID?              -- null when no replica exists
+    next_replica_id: NextReplicaID      -- barrier: no future replica with ID < this
+
+    -- A replica exists iff it has a non-null, non-merged ID.
+    exists: replica_id != null and replica_id != merged_tombstone_id
+    -- Whether a given ID has been permanently destroyed.
+    destroyed: replica_id = null or replica_id < next_replica_id
+
+    transitions replica_id {
+        -- replica_id is cleared on destruction
+    }
+}
+
+-- Placeholder occupies keyspace in the Store's btree after an initialized
+-- replica is removed, blocking concurrent snapshot application until the
+-- subsuming range extends to cover the gap (merges) or until dropped.
+entity Placeholder {
+    range_id: RangeID
+    start_key: Key
+    end_key: Key
+    store: Store
+    status: active | filled | dropped | failed
+
+    transitions status {
+        active -> filled
+        active -> dropped
+        active -> failed
+        terminal: filled, dropped, failed
+    }
+}
+
+-- PendingDestruction represents a staged but uncommitted destruction batch.
+-- Staging is fallible; committing is infallible (fatal on failure).
+entity PendingDestruction {
+    replica: Replica
+    status: staged | committed | aborted
+
+    transitions status {
+        staged -> committed
+        staged -> aborted
+        terminal: committed, aborted
+    }
+}
+
+------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    -- How often the GC queue re-checks normal replicas.
+    replica_gc_check_interval: Duration = 12.hours
+    -- How often the GC queue re-checks suspect replicas.
+    suspect_gc_check_interval: Duration = 3.seconds
+    -- Sentinel NextReplicaID for definitively merged ranges.
+    merged_tombstone_id: Integer = 2147483647
+}
+
+------------------------------------------------------------
+-- Rules: Staging and Committing
+------------------------------------------------------------
+
+-- Staging reads the on-disk ReplicaMark, validates it matches the replica
+-- being destroyed, computes the new mark, and prepares a write batch.
+-- This phase is fallible: if validation or I/O fails, no state changes.
+rule StageDestruction {
+    when: StageDestroyRequested(replica, next_replica_id)
+    requires: replica.destroy_status = alive or replica.destroy_status = merge_pending
+    requires: replica.mark.exists
+    requires: replica.mark.replica_id = replica.replica_id
+    requires: next_replica_id > replica.replica_id
+
+    ensures: PendingDestruction.created(
+        replica: replica,
+        status: staged
+    )
+
+    @guidance
+        -- Caller must hold replica.raftMu.
+        -- The batch clears replicated state, unreplicated (raft) state,
+        -- user keys, and writes a RangeTombstone with next_replica_id.
+        -- With separated engines, only unapplied raft log entries are
+        -- cleared; applied entries are left for WAG garbage collection.
+}
+
+-- If staging fails (I/O error, mark mismatch), the attempt is aborted
+-- with no side effects.
+rule StageDestructionFails {
+    when: StageDestroyFailed(replica)
+    ensures: replica.destroy_status = alive or replica.destroy_status = merge_pending
+    @guidance
+        -- No in-memory or on-disk state has changed. The caller may retry.
+}
+
+-- After staging succeeds, the replica is marked as removed in memory,
+-- then the batch is sync-committed to disk. Commit is infallible.
+rule CommitDestruction {
+    when: pending: PendingDestruction.status becomes staged
+    requires: pending.replica.destroy_status != removed
+
+    ensures: pending.replica.destroy_status = removed
+    ensures: pending.status = committed
+    ensures: pending.replica.mark.replica_id = null
+    ensures: pending.replica.mark.next_replica_id = NextReplicaID{ id: next_id }
+
+    @guidance
+        -- The destroy status is set to removed BEFORE the batch is committed.
+        -- This is safe because commit is infallible (panics on failure).
+        -- After commit, postDestroy cleanup runs: sideloaded storage is
+        -- cleared (best-effort), tenant metrics released, rate limiters
+        -- unhooked.
+}
+
+------------------------------------------------------------
+-- Rules: Replication Disconnect
+------------------------------------------------------------
+
+-- When a replica is removed, its raft group and in-flight proposals are
+-- torn down. Outstanding proposals receive AmbiguousResultError.
+rule DisconnectReplication {
+    when: replica: Replica.destroy_status becomes removed
+    ensures: ReplicationDisconnected(replica)
+
+    @guidance
+        -- Cancels proposal quota, flushes proposal buffer, finishes all
+        -- pending proposals with AmbiguousResultError, closes the raft
+        -- group, and closes the raft tracer. Requires raftMu.
+}
+
+------------------------------------------------------------
+-- Rules: Rebalancing Removal
+------------------------------------------------------------
+
+-- When the GC queue determines a replica is no longer in the range
+-- descriptor, it triggers removal with the descriptor's NextReplicaID.
+rule ReplicaGCRemoval {
+    when: ReplicaGCTriggered(replica)
+    requires: replica.destroy_status = alive
+    requires: replica.initialized
+
+    let desc = Meta2.lookup(replica.range_id)
+    -- The replica must not be a current member of the range.
+    requires: replica.store not in desc.replicas.store_id
+
+    ensures: StageDestroyRequested(replica, desc.next_replica_id)
+
+    @guidance
+        -- The GC queue performs a consistent range lookup against Meta2
+        -- to verify the replica has truly been removed, avoiding races
+        -- with in-progress rebalances.
+}
+
+-- When a ChangeReplicas command is applied that removes this store,
+-- the replica destroys itself inline during raft application.
+rule ConfChangeRemoval {
+    when: ConfChangeApplied(replica, new_descriptor)
+    requires: replica.store not in new_descriptor.replicas.store_id
+    requires: replica.destroy_status = alive
+
+    ensures: StageDestroyRequested(replica, new_descriptor.next_replica_id)
+
+    @guidance
+        -- The destruction is staged during raft entry application.
+        -- The data is destroyed in the application batch, then
+        -- removeInitializedReplicaRaftMuLocked is called with
+        -- DestroyData=false since data is already gone.
+}
+
+------------------------------------------------------------
+-- Rules: Range Merge
+------------------------------------------------------------
+
+-- When a merge trigger applies on the subsumed (RHS) replica, its
+-- replicated metadata is cleared but user keys are preserved for
+-- the LHS to inherit. A MergedTombstone is written to permanently
+-- prevent resurrection.
+rule SubsumeReplica {
+    when: MergeTriggerApplied(rhs_replica)
+    requires: rhs_replica.destroy_status = alive
+
+    ensures: rhs_replica.destroy_status = removed
+    ensures: rhs_replica.mark.next_replica_id = NextReplicaID{
+        id: config.merged_tombstone_id
+    }
+
+    @guidance
+        -- SubsumeReplica clears metadata but NOT user keys (MVCC,
+        -- system, lock table). The user keys are inherited by the
+        -- subsuming LHS range.
+        -- A placeholder is inserted covering the RHS keyspace to
+        -- prevent concurrent snapshot application while the LHS
+        -- extends its descriptor.
+}
+
+-- After the LHS extends its descriptor to cover the RHS keyspace,
+-- the placeholder is filled and removed.
+rule FillMergePlaceholder {
+    when: LHSDescriptorExtended(placeholder)
+    requires: placeholder.status = active
+    ensures: placeholder.status = filled
+}
+
+-- When a merge commits globally but the LHS on this store hasn't yet
+-- applied the merge trigger, the RHS enters a merge_pending state.
+-- It stops serving requests but its data remains on disk.
+rule MergePending {
+    when: MergeCommittedOnRHS(replica)
+    requires: replica.destroy_status = alive
+
+    ensures: replica.destroy_status = merge_pending
+    ensures: ReplicaGCQueued(replica)
+
+    @guidance
+        -- The replica returns RangeNotFoundError to all incoming
+        -- requests. It is queued to the GC queue with suspect priority
+        -- for prompt cleanup.
+}
+
+-- The GC queue processes a merge-pending replica by checking whether
+-- the left neighbor has caught up with the merge. If so, the replica
+-- can be fully removed.
+rule MergePendingGC {
+    when: ReplicaGCTriggered(replica)
+    requires: replica.destroy_status = merge_pending
+
+    let desc = Meta2.lookup(replica.range_id)
+    -- The range no longer exists in Meta2 (was merged).
+    requires: desc.range_id != replica.range_id
+
+    let left_neighbor = LeftNeighbor(replica)
+    -- The left neighbor must have applied the merge.
+    requires: left_neighbor.descriptor.end_key >= replica.end_key
+
+    ensures: StageDestroyRequested(replica, config.merged_tombstone_id)
+
+    @guidance
+        -- If the left neighbor hasn't applied the merge yet, the
+        -- replica is placed in GC purgatory and retried at the
+        -- suspect interval (3 seconds).
+}
+
+------------------------------------------------------------
+-- Rules: Store Cleanup
+------------------------------------------------------------
+
+-- After a replica is removed from in-memory state, it is unlinked
+-- from all Store maps and queues.
+rule UnlinkFromStore {
+    when: replica: Replica.destroy_status transitions_to removed
+    requires: replica.initialized
+
+    ensures: ReplicaUnlinkedFromStore(replica)
+
+    @guidance
+        -- Removes from replicasByRangeID (sync-map), replicasByKey
+        -- (btree), scanner, queues, raft recv queues, scheduler.
+        -- For initialized replicas, a placeholder is transiently
+        -- inserted during removal and then either kept (merges with
+        -- InsertPlaceholder) or immediately dropped.
+}
+
+------------------------------------------------------------
+-- Rules: Suspect Detection
+------------------------------------------------------------
+
+-- A replica is "suspect" if it may be stale and warrants accelerated
+-- GC checks. Suspect replicas are checked every 3 seconds instead of
+-- 12 hours.
+rule SuspectDetection {
+    when: ReplicaGCScheduleCheck(replica)
+    requires: replica.destroy_status = alive
+
+    let suspect = ReplicaIsSuspect(replica)
+    if suspect:
+        ensures: ReplicaGCQueued(replica)
+
+    @guidance
+        -- A replica is suspect if it is: a learner, a voter in joint
+        -- config transition (VOTER_INCOMING/OUTGOING/DEMOTING), a raft
+        -- candidate or pre-candidate, a follower whose leader is not
+        -- live, or a leader that has lost quorum.
+}
+
+------------------------------------------------------------
+-- Rules: Uninitialized Replica Removal
+------------------------------------------------------------
+
+-- Uninitialized replicas (never received a snapshot) have a simpler
+-- removal path. They are not in the replicasByKey btree and don't
+-- get placeholders.
+rule RemoveUninitializedReplica {
+    when: UninitializedReplicaRemovalRequested(replica, next_replica_id)
+    requires: not replica.initialized
+    requires: replica.destroy_status != removed
+
+    ensures: StageDestroyRequested(replica, next_replica_id)
+
+    @guidance
+        -- Unlike initialized replicas, this path does NOT handle
+        -- idempotent "already removed" — it fatals if the replica
+        -- is already marked removed.
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+-- Once a ReplicaMark records a NextReplicaID, no replica with a lower
+-- ID can ever exist on that Store for that RangeID.
+invariant NoResurrection {
+    for mark in ReplicaMarks:
+        for id in ReplicaIDs where id < mark.next_replica_id:
+            not exists Replica{range_id: mark.replica.range_id, replica_id: id, store: mark.replica.store}
+}
+
+-- A merged range (NextReplicaID = MergedTombstoneReplicaID) can never
+-- have another replica on the same Store.
+invariant MergedRangeNeverReturns {
+    for mark in ReplicaMarks where mark.next_replica_id.id = config.merged_tombstone_id:
+        not exists Replica{range_id: mark.replica.range_id, store: mark.replica.store}
+}
+
+-- The RangeTombstone must be written to storage before the RaftReplicaID
+-- is cleared. This ensures crash recovery always sees the tombstone.
+invariant TombstoneBeforeIDClear {
+    for mark in ReplicaMarks where mark.replica_id = null:
+        mark.next_replica_id.id > 0
+}
+
+-- If a replica exists, its ReplicaID is at least as large as the
+-- tombstone's NextReplicaID.
+invariant ReplicaIDAboveTombstone {
+    for mark in ReplicaMarks where mark.exists:
+        mark.replica_id >= mark.next_replica_id
+}
+
+-- Staging and committing are strictly ordered: in-memory destroy
+-- status is set after staging succeeds but before batch commit.
+invariant DestroyStatusBeforeCommit {
+    for pending in PendingDestructions where pending.status = committed:
+        pending.replica.destroy_status = removed
+}
+
+-- A placeholder can only exist for an initialized replica that has
+-- been removed from the Store's replica map.
+invariant PlaceholderRequiresRemoval {
+    for ph in Placeholders where ph.status = active:
+        not exists Replica{
+            range_id: ph.range_id,
+            store: ph.store,
+            destroy_status: alive
+        }
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Should uninitialized replica removal handle the already-removed case gracefully instead of fataling?"
+
+open question "Should sideloaded storage cleanup failures be retried at startup, or is leaking acceptable?"
